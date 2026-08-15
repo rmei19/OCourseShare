@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f5">
+<title>🛒 Liste de courses OCR</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
+main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{background:#222;color:#fff;border:0;border-radius:13px;padding:11px 14px;font:inherit;cursor:pointer}
+.btn.secondary{background:#eee;color:#222}
+.file input{display:none}.box{background:#fff;border-radius:17px;padding:12px;margin-top:12px}
+textarea{width:100%;min-height:150px;border:1px solid #ddd;border-radius:11px;padding:10px;font:inherit}
+#status{margin:10px 2px;color:#666;font-size:.9rem}.progress{height:6px;background:#ddd;border-radius:5px;overflow:hidden}.progress i{display:block;height:100%;width:0;background:#222;transition:width .2s}
+.cat h2{font-size:1rem;margin:2px 0 7px;display:flex;align-items:center;gap:7px}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
+.cat-sum{margin-left:auto;font-weight:400;color:#666;font-size:.85rem}
+.item{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:7px 0;border-bottom:1px solid #eee}
+.item input[type=checkbox]{width:20px;height:20px}input.name{flex:1;min-width:60px;overflow-wrap:anywhere;border:1px solid transparent;background:transparent;font:inherit;padding:4px 2px;border-radius:6px}input.name:focus{border-color:#ddd;background:#fff}.qty{width:52px}.price{width:66px;text-align:right}
+.line-total{width:62px;text-align:right;color:#555;font-size:.9rem}
+.del{flex:none;width:30px;height:30px;border:0;background:#f4dede;color:#a33;border-radius:8px;font-size:1rem;line-height:1;cursor:pointer}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-top:12px}
+.tab{flex:none;padding:8px 13px;border-radius:20px;background:#eee;color:#222;border:0;font:inherit;white-space:nowrap;cursor:pointer}
+.tab.active{background:#222;color:#fff}
+.tab.add{background:transparent;border:1px dashed #bbb;color:#666}
+.person-sel{flex:1 1 100%;margin-top:4px;padding:6px;border:1px solid #ddd;border-radius:8px;font:inherit;background:#fafafa}
+.cat-sel{flex:1 1 100%;margin-top:4px;padding:6px;border:1px solid #ddd;border-radius:8px;font:inherit;background:#fafafa;color:#555}
+.persons-row{flex:1 1 100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.chip{padding:7px 13px;border-radius:14px;border:1px solid #ddd;background:#fafafa;font-size:.85rem;color:#444;cursor:pointer;min-height:34px}
+.chip.active{background:#222;color:#fff;border-color:#222}
+.chip.all{border-style:dashed}
+.qty,.price{padding:6px;border:1px solid #ddd;border-radius:8px;font:inherit}.total{text-align:right;font-size:1.3rem;font-weight:700}.ticket{text-align:right;color:#555;font-size:.95rem;margin-top:4px}.small{font-size:.8rem;color:#777}
+h3{font-size:1rem;margin:0 0 10px}
+.pie-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.pie{width:170px;height:170px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px #eee}
+.legend{flex:1;min-width:180px}
+.legend-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.9rem}
+.legend-row span.lbl{flex:1}
+.legend-row span.val{font-weight:600}
+table.sum{width:100%;border-collapse:collapse;font-size:.92rem;table-layout:fixed}
+table.sum td{overflow-wrap:anywhere}
+table.sum th,table.sum td{text-align:left;padding:6px 4px;border-bottom:1px solid #eee}
+table.sum th:last-child,table.sum td:last-child{text-align:right}
+table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:none}
+.empty{color:#888;font-size:.9rem;text-align:center;padding:8px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>📝 Note</h1>
+<div class="tabs" id="modeTabs" style="margin-top:0"></div>
+<div class="actions">
+<label class="btn file">📷 Prendre une photo<input id="camera" type="file" accept="image/jpeg,image/png,image/webp,image/*" capture="environment"></label>
+<label class="btn file">🖼️ Choisir une image<input id="gallery" type="file" accept="image/jpeg,image/png,image/webp,image/*"></label>
+<button class="btn" id="analyze">➕ Analyser</button>
+<button class="btn secondary" id="clearText">🧹 Effacer le texte</button>
+</div>
+<div class="box" id="addForm" style="display:none">
+ <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <input id="addName" placeholder="Nom de l'article" style="flex:2;min-width:140px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
+  <input id="addQty" type="number" min="1" value="1" placeholder="Qté" style="width:64px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
+  <input id="addPrice" type="number" min="0" step=".01" placeholder="Prix €" style="width:80px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
+  <button class="btn" id="addSubmit">Ajouter</button>
+ </div>
+</div>
+<div id="status">Photo ou image de galerie. (OCR français + espagnol)</div>
+<div class="progress"><i id="bar"></i></div>
+<div class="box">
+<textarea id="raw" placeholder="Le texte OCR apparaîtra ici…"></textarea>
+<div class="small">Vérifie/corrige le texte avant « Analyser ». Un ticket est détecté automatiquement si le mot TOTAL apparaît ; sinon chaque ligne est traitée comme un article de liste.</div>
+</div>
+<div id="list"></div>
+<div id="summary"></div>
+</main>
+<script>
+/* ===================== Catégories (par mode) ===================== */
+const catColors={
+"Fruits & légumes":"#5cb85c","Viande & poisson":"#d9534f","Produits laitiers":"#f0ad4e","Épicerie":"#8e6cbf",
+"Snacks & apéritif":"#e0894a","Boissons":"#5bc0de","Alcool":"#a8325e","Entretien":"#4a7fc1","Hygiène":"#3fb0a3","Surgelés":"#4aa3c1",
+"Entrées":"#e0894a","Plats":"#d9534f","Desserts":"#f0ad4e","Café/Digestif":"#8e6cbf","Service/Extras":"#4a7fc1",
+"Alimentation":"#d9534f","Services":"#4a7fc1","Général":"#8e6cbf",
+"Autres":"#999"
+};
+const catsByMode={
+ // Ticket de supermarché : catégories alimentaires détaillées.
+ // Ordre important : les mots-clés les plus "spécifiques" sont testés en
+ // premier, pour éviter par ex. qu'un paquet de chips "saveur œuf" (huevo)
+ // ne finisse classé dans Produits laitiers.
+ courses:{
+"Snacks & apéritif":["lacasitos","almendra","almendras","fruto seco","frutos secos","cacahuete","patat","chips","frit","frita","fritas","aperitivo","snack"],
+"Alcool":["vino","vin","cerveza","biere","bière","cava","champagne","whisky","ron","vodka","ginebra","licor",
+ "mahou","estrella","cruzcampo","alhambra","heineken","amstel","celeste","cubillas","madremia","roble","crianza","reserva","duero","ribera","rioja","toro","tempranillo","garnacha","albarino"],
+"Fruits & légumes":["pomme","pommes","banane","bananes","tomate","tomates","salade","carotte","carottes","oignon","ail","courgette","poivron","pomme de terre","champignon","fruit","legume","legumes"],
+"Viande & poisson":["poulet","pollo","boeuf","bœuf","ternera","porc","cerdo","costilla","jambon","jamon","steak","viande","carne","poisson","pescado","saumon","salmon","thon","atun"],
+"Produits laitiers":["lait","leche","beurre","mantequilla","fromage","queso","yaourt","yogur","creme fraiche","crema","oeuf","huevo","nata"],
+"Épicerie":["pates","pasta","riz","arroz","farine","harina","sucre","azucar","sel","huile","aceite","vinaigre","conserve","sauce","cafe","the","cereales","pain","pan","biscotte","chocolat"],
+"Boissons":["eau","agua","jus","zumo","soda","refresco","batido","cola"],
+"Entretien":["lessive","vaisselle","eponge","nettoyant","papier toilette","sac poubelle","detergente","lavavajillas"],
+"Hygiène":["savon","jabon","shampoing","shampooing","champu","dentifrice","dentifrico","deodorant","desodorante"],
+"Surgelés":["surgele","surgeles","congelado","helado","glace"]
+ },
+ // Ticket de bar/restaurant : catégories par temps du repas.
+ restaurant:{
+"Alcool":["vino","vin","cerveza","biere","bière","cava","champagne","copa","gin","tonic","mojito","sangria","whisky","ron","vodka","cubata","tinto","blanco","rosado","clara"],
+"Café/Digestif":["cafe","café","capuchino","cappuccino","descafeinado","te","té","infusion","digestivo","chupito","carajillo"],
+"Boissons":["agua","refresco","zumo","cola","fanta","sprite","tonica","batido","limonada","horchata"],
+"Entrées":["entrante","entrada","ensalada","sopa","gazpacho","croqueta","croquetas","tapa","tapas","tosta","pincho","jamon","queso","aceituna"],
+"Desserts":["postre","tarta","helado","flan","tiramisu","mousse","brownie","fruta"],
+"Service/Extras":["servicio","cubierto","pan","propina","terraza"],
+"Plats":["paella","pasta","pizza","burger","hamburguesa","bocadillo","bikini","sandwich","carne","pollo","pescado","calamar","calamares","gamba","gambas","arroz","menu","plato","tigres","patatas","huevo"]
+ },
+ // Note générique / dépenses diverses, sans a priori alimentaire.
+ generique:{
+"Alimentation":["comida","alimento","restaurante","bar","cafeteria","supermercado","panaderia"],
+"Boissons":["agua","bebida","cerveza","vino","refresco","cafe","zumo"],
+"Services":["factura","servicio","transporte","taxi","parking","entrada","peaje","gasolina","hotel","billete"],
+"Général":[]
+ }
+};
+let mode=localStorage.getItem("courses6_mode")||"courses";
+let cats=catsByMode[mode]||catsByMode.courses;
+function setMode(m){
+ if(!catsByMode[m]||m===mode)return;
+ if(items.length&&!confirm("Passer en mode "+modeLabel(m)+" ? Les catégories des articles déjà présents seront recalculées automatiquement."))return;
+ mode=m;cats=catsByMode[mode];localStorage.setItem("courses6_mode",mode);
+ items.forEach(i=>i.cat=category(i.name));
+ save();render();
+}
+function modeLabel(m){return m==="courses"?"Courses":m==="restaurant"?"Restaurant":"Générique"}
+
+let items=JSON.parse(localStorage.getItem("courses6")||"[]"),lastTicketTotal=null;
+items.forEach(i=>{if(!Array.isArray(i.persons)){i.persons=i.person?[i.person]:[];delete i.person}});
+let idSeq=1+items.reduce((m,i)=>Math.max(m,i.id||0),0);
+let mergeMode=false,mergeSelection=new Set();
+let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="Tous";
+let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
+function savePayer(){localStorage.setItem("courses6_payer",JSON.stringify(payer))}
+function savePeople(){localStorage.setItem("courses6_people",JSON.stringify(people))}
+function visibleItems(){return activeTab==="Tous"?items:items.filter(i=>(i.persons||[]).includes(activeTab))}
+function itemShare(i,person){let n=(i.persons||[]).length;if(!n)return 0;return (i.qty||0)*(i.price||0)/n}
+
+function norm(s){return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim()}
+function category(s){let x=norm(s);for(const[c,w]of Object.entries(cats))if(w.some(a=>x.includes(norm(a))))return c;return"Autres"}
+function bigrams(s){let x=norm(s).replace(/ /g,"");let b=new Set();for(let i=0;i<x.length-1;i++)b.add(x.slice(i,i+2));return b}
+function diceSim(a,b){let A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>B.has(x)&&n++);return 2*n/(A.size+B.size)}
+function similarity(a,b){
+ let A=new Set(norm(a).split(" ").filter(x=>x.length>2)),B=new Set(norm(b).split(" ").filter(x=>x.length>2)),n=0;
+ A.forEach(x=>B.has(x)&&n++);
+ let tokenSim=n/Math.max(A.size,B.size,1);
+ // La similarité par mots entiers échoue si l'OCR a abîmé un seul mot
+ // (ex. "P12" lu "PI?"). On prend aussi une similarité par paires de
+ // caractères (Dice), plus tolérante au bruit OCR ponctuel.
+ return Math.max(tokenSim,diceSim(a,b));
+}
+function badName(s){
+ let x=norm(s);
+ return !x||x.length<4 ||
+ /^(total|iva|tarjet\w*|cambio|ambio|importe|subtotal|cash|club de clientes|conseguido|carretera|cif|ticket|aut|los mejores precios|calidad duroc|el kilo|semark|tus vecinos|camino|grupo s|b imp|n fact|n caja)/.test(x) ||
+ /\b(iva|tarjet\w*|tef|club|cif|carretera|camino|precios|euros|puntos)\b/.test(x);
+}
+/* Ticket OCR: on a receipt, a product line almost always has a price.
+   We deliberately reject no-price lines: this removes headers, slogans
+   and OCR garbage instead of dumping them into "Autres". */
+function extractPrice(s){
+ let t=s.replace(/\s+/g," ");
+ let matches=[];
+ for(const m of t.matchAll(/(\d{1,3}[,.]\d{2})\s*€?/g))matches.push({raw:m[0],v:parseFloat(m[1].replace(",",".")),i:m.index,end:m.index+m[0].length,type:1});
+ for(const m of t.matchAll(/(\d{1,3})\s+(\d{2})(?=\s*(?:€|e|[^\d]|$))/gi)){
+   let v=+(m[1]+"."+m[2]);if(v<=999){matches.push({raw:m[0],v,i:m.index,end:m.index+m[0].length,type:2})}
+ }
+ if(!matches.length)return null;
+ // Un motif "espacé" (type 2, ex. "80 48") est une supposition plus fragile
+ // qu'un vrai nombre décimal (type 1, ex. "9,80") : on l'ignore s'il
+ // chevauche un motif de type 1 déjà détecté.
+ matches=matches.filter(m=>m.type===1||!matches.some(o=>o.type===1&&o.i<m.end&&m.i<o.end));
+ // Le prix est la valeur plausible la plus à DROITE sur la ligne (colonne prix),
+ // donc on trie par position réelle dans le texte avant de prendre la dernière.
+ matches.sort((a,b)=>a.i-b.i);
+ return matches[matches.length-1];
+}
+function cleanName(s,price){
+ let t=s;
+ if(price)t=t.slice(0,price.i);
+ t=t.replace(/[|]/g," ").replace(/^[^A-Za-zÀ-ÿ]+/,"").replace(/[^A-Za-zÀ-ÿ0-9)\-./ ]+$/,"");
+ t=t.replace(/\s+/g," ").trim();
+ // L'OCR ajoute souvent un caractère parasite isolé en début de ligne
+ // (colonne case à cocher / bord du ticket) : "E VINO...", "ae NAT...".
+ // On ne touche plus aux chiffres ici : un nombre en tout début de ligne
+ // est presque toujours une vraie quantité (ex. "2 COFRADE"), gérée à part
+ // dans parseTicket — pas du bruit à jeter.
+ let noise=/^(?:ms|msa|rs|f7|f|nu|no|ino|pna|u|à|a|e|ae|me|k|o|ci|ge|fr|de|la)\s+/i;
+ let prev;
+ do{prev=t;t=t.replace(noise,"")}while(t!==prev&&t.length>4);
+ return t.trim();
+}
+function parseTicket(text){
+ let out=[],total=null,fallbackTotal=null;
+ for(const raw of text.split(/\n/)){
+   let line=raw.trim();
+   let tm=line.match(/\bTOTAL\b.*?(\d{1,3}[,.]\d{2})\s*€?/i);
+   if(tm)total=parseFloat(tm[1].replace(",","."));
+   // Repli : si le mot TOTAL est illisible par l'OCR, le montant réglé par
+   // carte ("Tarjeta Pin 94,74") correspond presque toujours au total payé.
+   let tj=line.match(/\btarjet\w*\b.*?(\d{1,3}[,.]\d{2})\s*€?/i);
+   if(tj)fallbackTotal=parseFloat(tj[1].replace(",","."));
+   // Certains tickets (bars/restaurants) indiquent la quantité en tout début
+   // de ligne : "2 COFRADE   2,40" où 2,40 est le total de la ligne (pas le
+   // prix unitaire). On extrait cette quantité et on déduit le prix unitaire.
+   let qty=1,workLine=line;
+   let qm=line.match(/^(\d{1,2})\s+(?=[A-Za-zÀ-ÿ])/);
+   if(qm){let n=parseInt(qm[1],10);if(n>=1&&n<=30){qty=n;workLine=line.slice(qm[0].length)}}
+   // Une vraie ligne d'article n'a qu'UN seul prix. Une ligne de ventilation
+   // de TVA ("B.Imp 16,81  IVA 21,00%  1,68") en a 2 ou 3 : base, taux, montant.
+   // Si l'OCR l'a rendue illisible au point de ne garder que des lettres
+   // isolées ("Ps NL NN"), ce nombre de prix reste le seul signal fiable.
+   if((line.match(/\d{1,3}[,.]\d{2}/g)||[]).length>=3)continue;
+   let p=extractPrice(workLine);if(!p)continue;
+   let name=cleanName(workLine,p);if(badName(name)||name.length<5)continue;
+   if(/\b(?:b\.?\s*imp|iva|importe|tarjet\w*|tef|cambio)\b/i.test(name))continue;
+   let unitPrice=qty>1?p.v/qty:p.v;
+   out.push({id:idSeq++,name,qty,price:unitPrice,cat:category(name),done:false,person:null});
+ }
+ return {out,total:total??fallbackTotal};
+}
+function parseShopping(text){
+ let out=[];
+ for(const raw of text.split(/\n/)){
+  let line=raw.replace(/\s+/g," ").trim();if(!line||badName(line))continue;
+  let qty=1,m;
+  if((m=line.match(/^(\d+)\s*[x×]\s+(.+)$/i)))qty=+m[1],line=m[2];
+  else if((m=line.match(/^(.+?)\s*[x×]\s*(\d+)$/i)))line=m[1],qty=+m[2];
+  out.push({id:idSeq++,name:line,qty,price:0,cat:category(line),done:false,person:null});
+ }
+ return {out,total:null};
+}
+/* Fusion pondérée : quand deux lignes du ticket désignent le même article
+   mais avec des prix différents (promo, variation), on recalcule un prix
+   unitaire moyen pondéré plutôt que d'écraser le prix précédent. Ainsi
+   qty * price reste toujours égal à la somme réellement payée. */
+function mergeNew(arr){
+ for(const p of arr){
+  let old=items.find(i=>similarity(i.name,p.name)>=.50);
+  if(old){
+   let priorTotal=old.price*old.qty, addedTotal=p.price*p.qty;
+   old.qty+=p.qty;
+   old.price=old.qty?(priorTotal+addedTotal)/old.qty:0;
+  } else items.push(p);
+ }
+}
+function parseText(){
+ const text=document.querySelector("#raw").value;
+ // La détection "c'est un ticket" ne doit pas reposer sur un seul mot :
+ // l'OCR abîme souvent TOTAL/IVA/TARJETA. On combine plusieurs indices :
+ // des mots-clés typiques d'un ticket, OU un nombre suffisant de lignes
+ // qui contiennent un montant décimal plausible (colonne prix).
+ const priceLineCount=text.split(/\n/).filter(l=>extractPrice(l)).length;
+ const keywordHit=/\b(total|iva|tarjet\w*|cambio|ambio|b\.?\s*imp|club de clientes)\b/i.test(text);
+ const ticket=keywordHit||priceLineCount>=4;
+ const r=ticket?parseTicket(text):parseShopping(text);
+ lastTicketTotal=r.total;
+ items=[];mergeNew(r.out);save();render();
+ document.querySelector("#status").textContent=ticket
+   ? `${r.out.length} ligne(s) de produit retenue(s) sur le ticket. Les lignes sans prix ont été ignorées.`
+   : `${r.out.length} article(s) reconnu(s).`;
+}
+function save(){localStorage.setItem("courses6",JSON.stringify(items))}
+function esc(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function eur(n){return n.toFixed(2).replace(".",",")+" €"}
+
+function render(){
+ renderModeTabs();
+ renderList();
+ renderSummary();
+}
+function renderModeTabs(){
+ let root=document.querySelector("#modeTabs");root.innerHTML="";
+ ["courses","restaurant","generique"].forEach(m=>{
+  let b=document.createElement("button");
+  b.className="tab"+(mode===m?" active":"");
+  b.textContent=modeLabel(m);
+  b.onclick=()=>setMode(m);
+  root.append(b);
+ });
+}
+
+function renderList(){
+ const root=document.querySelector("#list");root.innerHTML="";
+ renderTabs(root);
+ if(mergeMode){
+  let bar=document.createElement("div");bar.className="box";
+  bar.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+   <span>🔗 Coche 2 articles identiques (ou plus) à combiner.</span>
+   <button class="btn" id="mergeGo" ${mergeSelection.size>=2?"":"disabled"}>Fusionner (${mergeSelection.size})</button>
+   <button class="btn secondary" id="mergeCancel">Annuler</button>
+  </div>`;
+  root.append(bar);
+  bar.querySelector("#mergeCancel").onclick=()=>{mergeMode=false;mergeSelection.clear();render()};
+  bar.querySelector("#mergeGo").onclick=doMerge;
+ }
+ let list=visibleItems();
+ if(!list.length){root.insertAdjacentHTML("beforeend",`<div class="box empty">${activeTab==="Tous"?"Aucun article pour l’instant. Scanne un ticket ou tape une liste puis clique « Analyser ».":"Aucun article assigné à "+esc(activeTab)+" pour l’instant."}</div>`);return}
+ let groups={};
+ list.forEach(i=>(groups[i.cat]??=[]).push(i));
+ // Catégories triées par dépense décroissante
+ let order=Object.entries(groups).map(([c,arr])=>[c,arr,arr.reduce((s,i)=>s+i.price*i.qty,0)]).sort((a,b)=>b[2]-a[2]);
+ order.forEach(([cat,arr,catSum])=>{
+  let d=document.createElement("div");d.className="box cat";
+  d.innerHTML=`<h2><span class="dot" style="background:${catColors[cat]||catColors.Autres}"></span>${cat}<span class="cat-sum">${eur(catSum)}</span></h2>`;
+  arr.forEach(i=>{
+   let row=document.createElement("div");row.className="item";
+   let rightBtn=mergeMode
+    ?`<input type="checkbox" class="mergeSel" ${mergeSelection.has(i.id)?"checked":""} title="Sélectionner pour fusion">`
+    :`<button class="del" title="Supprimer cet article" aria-label="Supprimer">✕</button>`;
+   let personChips="";
+   if(people.length){
+    let allSel=people.length>0&&people.every(p=>(i.persons||[]).includes(p));
+    personChips=`<div class="persons-row">
+     <button type="button" class="chip all${allSel?" active":""}" data-all>Tous</button>
+     ${people.map(p=>`<button type="button" class="chip${(i.persons||[]).includes(p)?" active":""}" data-p="${esc(p)}">${esc(p)}</button>`).join("")}
+    </div>`;
+   }
+   let catNames=[...new Set([...Object.keys(cats),"Autres"])];
+   let catOpts=catNames.map(c=>`<option value="${esc(c)}" ${i.cat===c?"selected":""}>${esc(c)}</option>`).join("");
+   let catSel=`<select class="cat-sel">${catOpts}</select>`;
+   row.innerHTML=`<input type="checkbox" ${i.done?"checked":""}><input class="name" type="text" value="${esc(i.name)}"><input class="qty" type="number" min="1" value="${i.qty}"><input class="price" type="number" min="0" step=".01" value="${i.price?i.price.toFixed(2):""}" placeholder="€"><span class="line-total">${eur((i.qty||0)*(i.price||0))}</span>${rightBtn}${catSel}${personChips}`;
+   let [cb,nameEl,q,p]=row.querySelectorAll("input[type=checkbox],input.name,input.qty,input.price");
+   cb.onchange=()=>{i.done=cb.checked;save();render()};
+   nameEl.onchange=()=>{let v=nameEl.value.trim();if(v)i.name=v;save();render()};
+   q.onchange=()=>{i.qty=Math.max(1,+q.value||1);save();render()};
+   p.onchange=()=>{i.price=Math.max(0,+p.value||0);save();render()};
+   row.querySelector(".cat-sel").onchange=(e)=>{i.cat=e.target.value;save();render()};
+   if(mergeMode){
+    let msel=row.querySelector(".mergeSel");
+    msel.onchange=()=>{msel.checked?mergeSelection.add(i.id):mergeSelection.delete(i.id);render()};
+   }else{
+    let delBtn=row.querySelector(".del");
+    delBtn.onclick=()=>{let idx=items.indexOf(i);if(idx>-1){items.splice(idx,1);save();render()}};
+   }
+   let psel=row.querySelector(".person-sel");
+   if(psel)psel.onchange=()=>{i.person=psel.value||null;save();render()};
+   row.querySelectorAll(".persons-row .chip").forEach(chip=>{
+    chip.onclick=()=>{
+     i.persons=i.persons||[];
+     if(chip.hasAttribute("data-all")){
+      let allSel=people.length>0&&people.every(p=>i.persons.includes(p));
+      i.persons=allSel?[]:[...people];
+     }else{
+      let p=chip.getAttribute("data-p");
+      i.persons=i.persons.includes(p)?i.persons.filter(x=>x!==p):[...i.persons,p];
+     }
+     save();render();
+    };
+   });
+   d.append(row);
+  });root.append(d)
+ });
+ let sum=activeTab==="Tous"?list.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0):list.reduce((s,i)=>s+itemShare(i,activeTab),0);
+ let d=document.createElement("div");d.className="box total";
+ d.textContent=(activeTab==="Tous"?"Total des produits : ":"Part de "+activeTab+" : ")+eur(sum);
+ if(activeTab!=="Tous")d.insertAdjacentHTML("beforeend",`<div class="small" style="margin-top:4px">Les articles partagés avec d'autres personnes sont comptés au prorata (coût ÷ nombre de personnes assignées).</div>`);
+ if(activeTab==="Tous"&&lastTicketTotal!==null)d.insertAdjacentHTML("beforeend",`<div class="ticket">Total ticket : <b>${eur(lastTicketTotal)}</b>${Math.abs(sum-lastTicketTotal)<.01?" ✅":" ⚠️ écart : "+eur(Math.abs(sum-lastTicketTotal))}</div>`);
+ root.append(d);
+}
+
+function renderTabs(root){
+ let bar=document.createElement("div");bar.className="tabs";
+ let mk=(label,cls)=>{let b=document.createElement("button");b.className=cls;b.textContent=label;return b};
+ let allTab=mk("Tous","tab"+(activeTab==="Tous"?" active":""));
+ allTab.onclick=()=>{activeTab="Tous";render()};
+ bar.append(allTab);
+ people.forEach(p=>{
+  let t=mk(p,"tab"+(activeTab===p?" active":""));
+  t.onclick=()=>{activeTab=p;render()};
+  t.oncontextmenu=(e)=>{e.preventDefault();removePerson(p)};
+  t.ondblclick=()=>removePerson(p);
+  bar.append(t);
+ });
+ let addTab=mk("+ Personne","tab add");
+ addTab.onclick=()=>{
+  let name=prompt("Prénom de la personne à ajouter :");
+  if(name){name=name.trim();if(name&&!people.includes(name)){people.push(name);savePeople();render()}}
+ };
+ bar.append(addTab);
+ root.append(bar);
+ if(people.length)root.insertAdjacentHTML("beforeend",`<div class="small" style="margin:4px 2px 0">Astuce : double-tape un onglet pour supprimer cette personne (les articles repassent en "Non assigné").</div>`);
+ let toolbar=document.createElement("div");
+ toolbar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
+ toolbar.innerHTML=`<button class="btn secondary" id="tbClear">🗑️ Effacer la liste</button><button class="btn secondary" id="tbMerge">🔗 Fusionner</button><button class="btn secondary" id="tbAdd">➕ Ajouter</button>`;
+ toolbar.querySelector("#tbClear").onclick=clearList;
+ toolbar.querySelector("#tbMerge").onclick=toggleMergeMode;
+ toolbar.querySelector("#tbAdd").onclick=openAddForm;
+ root.append(toolbar);
+}
+function removePerson(p){
+ if(!confirm(`Supprimer "${p}" ? Ses articles ne lui seront plus attribués (partagés uniquement avec les autres personnes assignées, s'il y en a).`))return;
+ people=people.filter(x=>x!==p);
+ items.forEach(i=>{if(Array.isArray(i.persons))i.persons=i.persons.filter(x=>x!==p)});
+ if(activeTab===p)activeTab="Tous";
+ if(payer===p){payer=null;savePayer()}
+ savePeople();save();render();
+}
+
+function renderSummary(){
+ const root=document.querySelector("#summary");root.innerHTML="";
+ if(!items.length)return;
+ let list=visibleItems();
+
+ // --- Total par personne (toujours sur l'ensemble, indépendant de l'onglet actif) ---
+ if(people.length){
+  let byPerson={};
+  items.forEach(i=>{
+   let plist=(i.persons&&i.persons.length)?i.persons:["Non assigné"];
+   let share=(i.qty||0)*(i.price||0)/plist.length;
+   let qtyShare=(i.qty||0)/plist.length;
+   plist.forEach(key=>{
+    byPerson[key]??={total:0,count:0};
+    byPerson[key].total+=share; byPerson[key].count+=qtyShare;
+   });
+  });
+  let personRows=Object.entries(byPerson).map(([n,v])=>({name:n,...v})).sort((a,b)=>b.total-a.total);
+  let personGrand=items.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0);
+  let pBox=document.createElement("div");pBox.className="box";
+  pBox.innerHTML=`<h3>🧑‍🤝‍🧑 Total par personne</h3>
+   <table class="sum"><thead><tr><th>Personne</th><th>Qté</th><th>Total</th></tr></thead><tbody>
+   ${personRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.count%1===0?r.count:r.count.toFixed(1)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+   <tr class="grand"><td>Total général</td><td></td><td>${eur(personGrand)}</td></tr>
+   </tbody></table>
+   <div class="small" style="margin-top:6px">Un article assigné à plusieurs personnes est compté au prorata (coût ÷ nombre de personnes). "Non assigné" regroupe les articles non attribués.</div>
+   <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <label class="small" for="payerSel">💳 Qui a payé le ticket ?</label>
+    <select id="payerSel"><option value="">— Choisir —</option>${people.map(p=>`<option value="${esc(p)}" ${payer===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
+   </div>`;
+  root.append(pBox);
+  pBox.querySelector("#payerSel").onchange=(e)=>{payer=e.target.value||null;savePayer();render()};
+
+  if(payer&&people.includes(payer)){
+   let owed=byPerson[payer]?.total||0;
+   let debts=personRows.filter(r=>r.name!==payer&&r.name!=="Non assigné"&&r.total>0.004);
+   let dBox=document.createElement("div");dBox.className="box";
+   if(debts.length){
+    dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3>
+     <table class="sum"><thead><tr><th>Personne</th><th>Doit à ${esc(payer)}</th></tr></thead><tbody>
+     ${debts.map(r=>`<tr><td>${esc(r.name)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+     </tbody></table>
+     <div class="small" style="margin-top:6px">${esc(payer)} a avancé ${eur(personGrand)} au total et récupère ${eur(debts.reduce((s,r)=>s+r.total,0))} auprès des autres (sa propre part de ${eur(owed)} reste à sa charge).</div>`;
+   }else{
+    dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3><div class="small">Personne ne doit rien pour l'instant (assigne des articles aux autres personnes).</div>`;
+   }
+   root.append(dBox);
+  }
+ }
+
+ if(!list.length)return;
+
+ // Sommes par catégorie (sur l'onglet actif)
+ let byCat={};
+ list.forEach(i=>{
+  let c=i.cat, t=(i.qty||0)*(i.price||0);
+  byCat[c]??={total:0,count:0};
+  byCat[c].total+=t; byCat[c].count+=(i.qty||0);
+ });
+ let catRows=Object.entries(byCat).map(([c,v])=>({cat:c,...v})).sort((a,b)=>b.total-a.total);
+ let grandTotal=catRows.reduce((s,r)=>s+r.total,0)||1;
+
+ // --- Camembert (conic-gradient) ---
+ let acc=0, slices=[];
+ catRows.forEach(r=>{
+  let pct=r.total/grandTotal*100;
+  slices.push(`${catColors[r.cat]||catColors.Autres} ${acc.toFixed(2)}% ${(acc+pct).toFixed(2)}%`);
+  acc+=pct;
+ });
+ let pieBg = slices.length ? `conic-gradient(${slices.join(",")})` : "#eee";
+
+ let pieBox=document.createElement("div");pieBox.className="box";
+ pieBox.innerHTML=`<h3>🥧 Répartition des dépenses par catégorie${activeTab!=="Tous"?" — "+esc(activeTab):""}</h3>
+  <div class="pie-wrap">
+   <div class="pie" style="background:${pieBg}"></div>
+   <div class="legend">
+    ${catRows.map(r=>`<div class="legend-row"><span class="dot" style="background:${catColors[r.cat]||catColors.Autres}"></span><span class="lbl">${esc(r.cat)} (${(r.total/grandTotal*100).toFixed(0)}%)</span><span class="val">${eur(r.total)}</span></div>`).join("")}
+   </div>
+  </div>`;
+ root.append(pieBox);
+
+ // --- Tableau par catégorie ---
+ let catBox=document.createElement("div");catBox.className="box";
+ catBox.innerHTML=`<h3>📊 Total par catégorie${activeTab!=="Tous"?" — "+esc(activeTab):""}</h3>
+  <table class="sum"><thead><tr><th>Catégorie</th><th>Qté</th><th>Total</th></tr></thead><tbody>
+  ${catRows.map(r=>`<tr><td>${esc(r.cat)}</td><td>${r.count}</td><td>${eur(r.total)}</td></tr>`).join("")}
+  <tr class="grand"><td>Total général</td><td></td><td>${eur(grandTotal)}</td></tr>
+  </tbody></table>`;
+ root.append(catBox);
+
+ // --- Tableau par article ---
+ let artRows=list.map(i=>({name:i.name,cat:i.cat,qty:i.qty,price:i.price,total:(i.qty||0)*(i.price||0)})).sort((a,b)=>b.total-a.total);
+ let artBox=document.createElement("div");artBox.className="box";
+ artBox.innerHTML=`<h3>🧾 Total par article${activeTab!=="Tous"?" — "+esc(activeTab):""}</h3>
+  <table class="sum"><thead><tr><th>Article</th><th>Qté</th><th>PU</th><th>Total</th></tr></thead><tbody>
+  ${artRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td>${eur(r.price)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+  </tbody></table>`;
+ root.append(artBox);
+}
+
+let tessPromise;
+function loadTesseract(){if(window.Tesseract)return Promise.resolve();if(tessPromise)return tessPromise;tessPromise=new Promise((resolve,reject)=>{let s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";s.onload=resolve;s.onerror=()=>reject(new Error("Impossible de charger le moteur OCR. Vérifie Internet."));document.head.appendChild(s)});return tessPromise}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function freshBlob(file){try{return file.slice(0,file.size,file.type||undefined)}catch(e){return file}}
+
+async function tryImageBitmap(file){return await createImageBitmap(file)}
+function tryFileReader(file){
+ return new Promise((resolve,reject)=>{
+  let reader=new FileReader();
+  reader.onload=()=>{let im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error("décodage data URL impossible"));im.src=reader.result};
+  reader.onerror=()=>reject(new Error("lecture fichier impossible ("+(reader.error?reader.error.name:"?")+")"));
+  reader.readAsDataURL(file);
+ });
+}
+function tryObjectUrl(file){
+ return new Promise((resolve,reject)=>{
+  let url;
+  try{url=URL.createObjectURL(file)}catch(e){reject(e);return}
+  let im=new Image();
+  im.onload=()=>{resolve(im)}; // on ne révoque qu'après le drawImage, plus loin
+  im.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("décodage URL objet impossible"))};
+  im.src=url; im._objUrl=url;
+ });
+}
+
+async function imageCanvas(file,mode="none"){
+ if(!file)throw new Error("Aucun fichier reçu du sélecteur.");
+ if(!file.size)throw new Error("Le fichier est vide (0 octet). La prise de photo a peut-être échoué — réessaie, ou choisis l'image depuis la galerie.");
+ if(file.type&&!file.type.startsWith("image/"))throw new Error("Le fichier sélectionné n'est pas une image (type: "+file.type+").");
+
+ // Sur Android, l'accès à un fichier de la galerie via un fournisseur de contenu
+ // (content://…) échoue parfois de façon purement transitoire (le fournisseur
+ // n'a pas encore "ouvert" le fichier). On tente donc chaque méthode plusieurs
+ // fois, avec un court délai et un Blob frais (.slice()), avant d'abandonner.
+ const attempts=[
+  {label:"createImageBitmap",run:f=>tryImageBitmap(f)},
+  {label:"FileReader",run:f=>tryFileReader(f)},
+  {label:"URL objet",run:f=>tryObjectUrl(f)},
+ ];
+ let drawSource=null,srcW,srcH,errors=[],objUrlUsed=null;
+ outer:
+ for(let round=0;round<2&&!drawSource;round++){
+  if(round===1)await sleep(400);
+  for(const a of attempts){
+   try{
+    let f=round===0?file:freshBlob(file);
+    let res=await a.run(f);
+    if(res instanceof ImageBitmap){drawSource=res;srcW=res.width;srcH=res.height}
+    else{drawSource=res;srcW=res.naturalWidth;srcH=res.naturalHeight;if(res._objUrl)objUrlUsed=res._objUrl}
+    break outer;
+   }catch(e){errors.push(a.label+(round?" (2e essai)":"")+": "+(e.message||e))}
+  }
+ }
+ if(!drawSource){
+  throw new Error("Impossible de lire cette image après plusieurs tentatives (type: "+(file.type||"inconnu")+", nom: "+(file.name||"?")+"). Détails : "+errors.join(" | ")+". Essaie de resélectionner la même photo, ou une autre photo/navigateur.");
+ }
+
+ let max=3000,sc=Math.min(1,max/Math.max(srcW,srcH));
+ if(!isFinite(sc)||sc<=0)throw new Error("Dimensions d'image invalides");
+ let c=document.createElement("canvas");
+ c.width=Math.max(1,Math.round(srcW*sc));
+ c.height=Math.max(1,Math.round(srcH*sc));
+ let x=c.getContext("2d",{willReadFrequently:true});
+ if(!x)throw new Error("Canvas indisponible");
+ x.drawImage(drawSource,0,0,c.width,c.height);
+ if(mode==="contrast"){let d=x.getImageData(0,0,c.width,c.height),a=d.data;for(let i=0;i<a.length;i+=4){let g=.299*a[i]+.587*a[i+1]+.114*a[i+2];g=Math.max(0,Math.min(255,(g-128)*1.45+128));a[i]=a[i+1]=a[i+2]=g}x.putImageData(d,0,0)}
+ else if(mode==="binarize"){
+  // Seuillage dur noir/blanc : efface les filigranes gris clair (motifs
+  // promotionnels imprimés en fond de certains tickets, ex. Grupo Dia) qui
+  // se confondent avec l'encre du texte lors d'un simple boost de contraste.
+  let d=x.getImageData(0,0,c.width,c.height),a=d.data,THRESH=165;
+  for(let i=0;i<a.length;i+=4){let g=.299*a[i]+.587*a[i+1]+.114*a[i+2];let v=g<THRESH?0:255;a[i]=a[i+1]=a[i+2]=v}
+  x.putImageData(d,0,0);
+ }
+ if(drawSource instanceof ImageBitmap)drawSource.close();
+ if(objUrlUsed)URL.revokeObjectURL(objUrlUsed);
+ return c;
+}
+async function ocr(file){
+ let st=document.querySelector("#status"),bar=document.querySelector("#bar");
+ try{
+  st.textContent="Chargement du moteur OCR…";bar.style.width="5%";await loadTesseract();
+  // spa+fra : la plupart des tickets de supermarché (Espagne) sont en espagnol,
+  // fra reste utile pour les accents et les listes manuscrites en français.
+  let w=await Tesseract.createWorker("spa+fra",1,{logger:m=>{if(m.status==="recognizing text"){let p=10+Math.round(m.progress*80);bar.style.width=p+"%";st.textContent="Lecture : "+p+" %"}}});
+  await w.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1"});
+  let c=await imageCanvas(file,"none"),r=await w.recognize(c),text=r.data.text||"",conf=r.data.confidence||0;
+  if(conf<45||text.length<30){
+   st.textContent="Amélioration du contraste…";
+   let c2=await imageCanvas(file,"contrast"),r2=await w.recognize(c2);
+   if((r2.data.confidence||0)>conf){text=r2.data.text||text;conf=r2.data.confidence||conf}
+  }
+  if(conf<45||text.length<30){
+   st.textContent="Suppression des filigranes…";
+   let c3=await imageCanvas(file,"binarize"),r3=await w.recognize(c3);
+   if((r3.data.confidence||0)>conf){text=r3.data.text||text;conf=r3.data.confidence||conf}
+  }
+  await w.terminate();document.querySelector("#raw").value=text.trim();bar.style.width="100%";st.textContent=`OCR terminé (${Math.round(conf)} %). Vérifie le texte puis « Analyser ».`;
+ }catch(e){bar.style.width="0%";st.textContent="Erreur OCR : "+(e.message||e)}
+}
+document.querySelector("#camera").onchange=e=>{if(e.target.files[0])ocr(e.target.files[0])};
+document.querySelector("#gallery").onchange=e=>{if(e.target.files[0])ocr(e.target.files[0])};
+document.querySelector("#analyze").onclick=parseText;
+function clearList(){if(confirm("Effacer toute la liste ?")){items=[];lastTicketTotal=null;save();render()}}
+function toggleMergeMode(){mergeMode=!mergeMode;mergeSelection.clear();render()}
+function openAddForm(){
+ let f=document.querySelector("#addForm");
+ f.style.display=f.style.display==="none"?"block":"none";
+ if(f.style.display==="block")document.querySelector("#addName").focus();
+}
+document.querySelector("#clearText").onclick=()=>{document.querySelector("#raw").value="";document.querySelector("#status").textContent="Zone de texte vidée.";document.querySelector("#bar").style.width="0%"};
+document.querySelector("#addSubmit").onclick=()=>{
+ let nameEl=document.querySelector("#addName"),qtyEl=document.querySelector("#addQty"),priceEl=document.querySelector("#addPrice");
+ let name=nameEl.value.trim();
+ if(!name)return nameEl.focus();
+ let qty=Math.max(1,+qtyEl.value||1),price=Math.max(0,+priceEl.value||0);
+ items.push({id:idSeq++,name,qty,price,cat:category(name),done:false,person:null});
+ save();render();
+ // Formulaire prêt pour l'ajout suivant (pratique pour saisir plusieurs articles d'affilée).
+ nameEl.value="";qtyEl.value="1";priceEl.value="";nameEl.focus();
+};
+function doMerge(){
+ if(mergeSelection.size<2)return;
+ let selected=items.filter(i=>mergeSelection.has(i.id));
+ if(selected.length<2)return;
+ let totalQty=selected.reduce((s,i)=>s+(+i.qty||0),0);
+ let totalSpent=selected.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0);
+ let keep=selected[0];
+ keep.qty=totalQty||1;
+ keep.price=totalQty?totalSpent/totalQty:totalSpent;
+ // On retire les autres articles fusionnés, on garde le nom/catégorie du premier sélectionné.
+ items=items.filter(i=>i===keep||!mergeSelection.has(i.id));
+ mergeMode=false;mergeSelection.clear();
+ save();render();
+}
+render();
+</script>
+</body>
+</html>
