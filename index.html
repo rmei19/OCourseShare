@@ -32,6 +32,10 @@ textarea{width:100%;min-height:150px;border:1px solid #ddd;border-radius:11px;pa
 .chip.all{border-style:dashed}
 .qty,.price{padding:6px;border:1px solid #ddd;border-radius:8px;font:inherit}.total{text-align:right;font-size:1.3rem;font-weight:700}.ticket{text-align:right;color:#555;font-size:.95rem;margin-top:4px}.small{font-size:.8rem;color:#777}
 h3{font-size:1rem;margin:0 0 10px}
+.section-title{font-size:1.05rem;font-weight:700;margin:26px 4px 10px;padding-top:16px;border-top:1px solid #e3e3e3;color:#333}
+.box-title{font-size:1rem;margin:0 0 10px;font-weight:700}
+.box-header-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.box-header-row .box-title{margin:0}
 .pie-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .pie{width:170px;height:170px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px #eee}
 .legend{flex:1;min-width:180px}
@@ -50,12 +54,30 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 <main>
 <h1>📝 Note</h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
-<div class="actions">
-<label class="btn file">📷 Prendre une photo<input id="camera" type="file" accept="image/jpeg,image/png,image/webp,image/*" capture="environment"></label>
-<label class="btn file">🖼️ Choisir une image<input id="gallery" type="file" accept="image/jpeg,image/png,image/webp,image/*"></label>
-<button class="btn" id="analyze">➕ Analyser</button>
-<button class="btn secondary" id="clearText">🧹 Effacer le texte</button>
+
+<div class="box">
+ <h3 class="box-title">📷 Scanner un ticket</h3>
+ <div class="actions">
+ <label class="btn file">📷 Prendre une photo<input id="camera" type="file" accept="image/jpeg,image/png,image/webp,image/*" capture="environment"></label>
+ <label class="btn file">🖼️ Choisir une image<input id="gallery" type="file" accept="image/jpeg,image/png,image/webp,image/*"></label>
+ </div>
+ <div id="status">Photo ou image de galerie. (OCR français + espagnol)</div>
+ <div class="progress"><i id="bar"></i></div>
 </div>
+
+<div class="box">
+ <div class="box-header-row">
+  <h3 class="box-title">📝 Texte reconnu</h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+   <button class="btn" id="analyze">➕ Analyser</button>
+   <button class="btn secondary" id="clearText">🧹 Effacer</button>
+  </div>
+ </div>
+ <textarea id="raw" placeholder="Le texte OCR apparaîtra ici…"></textarea>
+ <div class="small">Vérifie/corrige le texte avant « Analyser ». Un ticket est détecté automatiquement si le mot TOTAL apparaît ; sinon chaque ligne est traitée comme un article de liste.</div>
+</div>
+
+<h2 class="section-title">🧾 Articles</h2>
 <div class="box" id="addForm" style="display:none">
  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
   <input id="addName" placeholder="Nom de l'article" style="flex:2;min-width:140px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
@@ -64,13 +86,9 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
   <button class="btn" id="addSubmit">Ajouter</button>
  </div>
 </div>
-<div id="status">Photo ou image de galerie. (OCR français + espagnol)</div>
-<div class="progress"><i id="bar"></i></div>
-<div class="box">
-<textarea id="raw" placeholder="Le texte OCR apparaîtra ici…"></textarea>
-<div class="small">Vérifie/corrige le texte avant « Analyser ». Un ticket est détecté automatiquement si le mot TOTAL apparaît ; sinon chaque ligne est traitée comme un article de liste.</div>
-</div>
 <div id="list"></div>
+
+<h2 class="section-title">📊 Résumé</h2>
 <div id="summary"></div>
 </main>
 <script>
