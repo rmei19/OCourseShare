@@ -17,7 +17,7 @@ textarea{width:100%;min-height:150px;border:1px solid #ddd;border-radius:11px;pa
 .dot{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
 .cat-sum{margin-left:auto;font-weight:400;color:#666;font-size:.85rem}
 .item{display:flex;flex-wrap:wrap;gap:7px;align-items:center;padding:7px 0;border-bottom:1px solid #eee}
-.item input[type=checkbox]{width:20px;height:20px}input.name{flex:1;min-width:60px;overflow-wrap:anywhere;border:1px solid transparent;background:transparent;font:inherit;padding:4px 2px;border-radius:6px}input.name:focus{border-color:#ddd;background:#fff}.qty{width:52px}.price{width:66px;text-align:right}
+.item input[type=checkbox]{width:20px;height:20px}input.name{flex:1;min-width:60px;overflow-wrap:anywhere;border:1px solid transparent;background:transparent;font:inherit;font-size:1.02rem;font-weight:600;color:#111;padding:4px 2px;border-radius:6px}input.name:focus{border-color:#ddd;background:#fff}.qty{width:52px}.price{width:66px;text-align:right}
 .line-total{width:62px;text-align:right;color:#555;font-size:.9rem}
 .del{flex:none;width:30px;height:30px;border:0;background:#f4dede;color:#a33;border-radius:8px;font-size:1rem;line-height:1;cursor:pointer}
 .tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-top:12px}
@@ -36,6 +36,9 @@ h3{font-size:1rem;margin:0 0 10px}
 .box-title{font-size:1rem;margin:0 0 10px;font-weight:700}
 .box-header-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .box-header-row .box-title{margin:0}
+.sec-toggle{cursor:pointer;user-select:none}
+.sec-toggle .chev{display:inline-block;transition:transform .15s;margin-right:4px;font-size:.85em;color:#888}
+.sec-toggle.closed .chev{transform:rotate(-90deg)}
 .pie-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .pie{width:170px;height:170px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px #eee}
 .legend{flex:1;min-width:180px}
@@ -66,18 +69,18 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </div>
 
 <div class="box">
- <div class="box-header-row">
-  <h3 class="box-title">📝 Texte reconnu</h3>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
+ <h3 class="box-title sec-toggle" id="textToggle"><span class="chev">▾</span>📝 Texte reconnu</h3>
+ <div id="textBody">
+  <textarea id="raw" placeholder="Le texte OCR apparaîtra ici…"></textarea>
+  <div class="small">Vérifie/corrige le texte avant « Analyser ». Un ticket est détecté automatiquement si le mot TOTAL apparaît ; sinon chaque ligne est traitée comme un article de liste.</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
    <button class="btn" id="analyze">➕ Analyser</button>
    <button class="btn secondary" id="clearText">🧹 Effacer</button>
   </div>
  </div>
- <textarea id="raw" placeholder="Le texte OCR apparaîtra ici…"></textarea>
- <div class="small">Vérifie/corrige le texte avant « Analyser ». Un ticket est détecté automatiquement si le mot TOTAL apparaît ; sinon chaque ligne est traitée comme un article de liste.</div>
 </div>
 
-<h2 class="section-title">🧾 Articles</h2>
+<h2 class="section-title sec-toggle" id="listToggle"><span class="chev">▾</span>🧾 Articles</h2>
 <div class="box" id="addForm" style="display:none">
  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
   <input id="addName" placeholder="Nom de l'article" style="flex:2;min-width:140px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
@@ -151,6 +154,7 @@ let items=JSON.parse(localStorage.getItem("courses6")||"[]"),lastTicketTotal=nul
 items.forEach(i=>{if(!Array.isArray(i.persons)){i.persons=i.person?[i.person]:[];delete i.person}});
 let idSeq=1+items.reduce((m,i)=>Math.max(m,i.id||0),0);
 let mergeMode=false,mergeSelection=new Set();
+let listOpen=true,personSummaryOpen=true,articleTableOpen=false;
 let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="Tous";
 let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
 function savePayer(){localStorage.setItem("courses6_payer",JSON.stringify(payer))}
@@ -304,7 +308,7 @@ function renderModeTabs(){
 
 function renderList(){
  const root=document.querySelector("#list");root.innerHTML="";
- renderTabs(root);
+ if(!listOpen)return;
  if(mergeMode){
   let bar=document.createElement("div");bar.className="box";
   bar.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -317,7 +321,11 @@ function renderList(){
   bar.querySelector("#mergeGo").onclick=doMerge;
  }
  let list=visibleItems();
- if(!list.length){root.insertAdjacentHTML("beforeend",`<div class="box empty">${activeTab==="Tous"?"Aucun article pour l’instant. Scanne un ticket ou tape une liste puis clique « Analyser ».":"Aucun article assigné à "+esc(activeTab)+" pour l’instant."}</div>`);return}
+ if(!list.length){
+  root.insertAdjacentHTML("beforeend",`<div class="box empty">${activeTab==="Tous"?"Aucun article pour l’instant. Scanne un ticket ou tape une liste puis clique « Analyser ».":"Aucun article assigné à "+esc(activeTab)+" pour l’instant."}</div>`);
+  renderTabs(root);
+  return;
+ }
  let groups={};
  list.forEach(i=>(groups[i.cat]??=[]).push(i));
  // Catégories triées par dépense décroissante
@@ -373,6 +381,7 @@ function renderList(){
    d.append(row);
   });root.append(d)
  });
+ renderTabs(root);
  let sum=activeTab==="Tous"?list.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0):list.reduce((s,i)=>s+itemShare(i,activeTab),0);
  let d=document.createElement("div");d.className="box total";
  d.textContent=(activeTab==="Tous"?"Total des produits : ":"Part de "+activeTab+" : ")+eur(sum);
@@ -439,33 +448,42 @@ function renderSummary(){
   let personRows=Object.entries(byPerson).map(([n,v])=>({name:n,...v})).sort((a,b)=>b.total-a.total);
   let personGrand=items.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0);
   let pBox=document.createElement("div");pBox.className="box";
-  pBox.innerHTML=`<h3>🧑‍🤝‍🧑 Total par personne</h3>
-   <table class="sum"><thead><tr><th>Personne</th><th>Qté</th><th>Total</th></tr></thead><tbody>
-   ${personRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.count%1===0?r.count:r.count.toFixed(1)}</td><td>${eur(r.total)}</td></tr>`).join("")}
-   <tr class="grand"><td>Total général</td><td></td><td>${eur(personGrand)}</td></tr>
-   </tbody></table>
-   <div class="small" style="margin-top:6px">Un article assigné à plusieurs personnes est compté au prorata (coût ÷ nombre de personnes). "Non assigné" regroupe les articles non attribués.</div>
-   <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <label class="small" for="payerSel">💳 Qui a payé le ticket ?</label>
-    <select id="payerSel"><option value="">— Choisir —</option>${people.map(p=>`<option value="${esc(p)}" ${payer===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
-   </div>`;
-  root.append(pBox);
-  pBox.querySelector("#payerSel").onchange=(e)=>{payer=e.target.value||null;savePayer();render()};
+  let pHead=document.createElement("h3");pHead.className="box-title sec-toggle"+(personSummaryOpen?"":" closed");
+  pHead.innerHTML=`<span class="chev">▾</span>🧑‍🤝‍🧑 Total par personne`;
+  pHead.onclick=()=>{personSummaryOpen=!personSummaryOpen;render()};
+  pBox.append(pHead);
+  if(personSummaryOpen){
+   let pBody=document.createElement("div");
+   pBody.innerHTML=`<table class="sum"><thead><tr><th>Personne</th><th>Qté</th><th>Total</th></tr></thead><tbody>
+    ${personRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.count%1===0?r.count:r.count.toFixed(1)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+    <tr class="grand"><td>Total général</td><td></td><td>${eur(personGrand)}</td></tr>
+    </tbody></table>
+    <div class="small" style="margin-top:6px">Un article assigné à plusieurs personnes est compté au prorata (coût ÷ nombre de personnes). "Non assigné" regroupe les articles non attribués.</div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+     <label class="small" for="payerSel">💳 Qui a payé le ticket ?</label>
+     <select id="payerSel"><option value="">— Choisir —</option>${people.map(p=>`<option value="${esc(p)}" ${payer===p?"selected":""}>${esc(p)}</option>`).join("")}</select>
+    </div>`;
+   pBox.append(pBody);
+   root.append(pBox);
+   pBody.querySelector("#payerSel").onchange=(e)=>{payer=e.target.value||null;savePayer();render()};
 
-  if(payer&&people.includes(payer)){
-   let owed=byPerson[payer]?.total||0;
-   let debts=personRows.filter(r=>r.name!==payer&&r.name!=="Non assigné"&&r.total>0.004);
-   let dBox=document.createElement("div");dBox.className="box";
-   if(debts.length){
-    dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3>
-     <table class="sum"><thead><tr><th>Personne</th><th>Doit à ${esc(payer)}</th></tr></thead><tbody>
-     ${debts.map(r=>`<tr><td>${esc(r.name)}</td><td>${eur(r.total)}</td></tr>`).join("")}
-     </tbody></table>
-     <div class="small" style="margin-top:6px">${esc(payer)} a avancé ${eur(personGrand)} au total et récupère ${eur(debts.reduce((s,r)=>s+r.total,0))} auprès des autres (sa propre part de ${eur(owed)} reste à sa charge).</div>`;
-   }else{
-    dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3><div class="small">Personne ne doit rien pour l'instant (assigne des articles aux autres personnes).</div>`;
+   if(payer&&people.includes(payer)){
+    let owed=byPerson[payer]?.total||0;
+    let debts=personRows.filter(r=>r.name!==payer&&r.name!=="Non assigné"&&r.total>0.004);
+    let dBox=document.createElement("div");dBox.className="box";
+    if(debts.length){
+     dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3>
+      <table class="sum"><thead><tr><th>Personne</th><th>Doit à ${esc(payer)}</th></tr></thead><tbody>
+      ${debts.map(r=>`<tr><td>${esc(r.name)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="small" style="margin-top:6px">${esc(payer)} a avancé ${eur(personGrand)} au total et récupère ${eur(debts.reduce((s,r)=>s+r.total,0))} auprès des autres (sa propre part de ${eur(owed)} reste à sa charge).</div>`;
+    }else{
+     dBox.innerHTML=`<h3>💰 Qui doit combien à ${esc(payer)}</h3><div class="small">Personne ne doit rien pour l'instant (assigne des articles aux autres personnes).</div>`;
+    }
+    root.append(dBox);
    }
-   root.append(dBox);
+  }else{
+   root.append(pBox);
   }
  }
 
@@ -509,13 +527,20 @@ function renderSummary(){
   </tbody></table>`;
  root.append(catBox);
 
- // --- Tableau par article ---
+ // --- Tableau par article (liste finale) ---
  let artRows=list.map(i=>({name:i.name,cat:i.cat,qty:i.qty,price:i.price,total:(i.qty||0)*(i.price||0)})).sort((a,b)=>b.total-a.total);
  let artBox=document.createElement("div");artBox.className="box";
- artBox.innerHTML=`<h3>🧾 Total par article${activeTab!=="Tous"?" — "+esc(activeTab):""}</h3>
-  <table class="sum"><thead><tr><th>Article</th><th>Qté</th><th>PU</th><th>Total</th></tr></thead><tbody>
-  ${artRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td>${eur(r.price)}</td><td>${eur(r.total)}</td></tr>`).join("")}
-  </tbody></table>`;
+ let artHead=document.createElement("h3");artHead.className="box-title sec-toggle"+(articleTableOpen?"":" closed");
+ artHead.innerHTML=`<span class="chev">▾</span>🧾 Total par article${activeTab!=="Tous"?" — "+esc(activeTab):""}`;
+ artHead.onclick=()=>{articleTableOpen=!articleTableOpen;render()};
+ artBox.append(artHead);
+ if(articleTableOpen){
+  let artBody=document.createElement("div");
+  artBody.innerHTML=`<table class="sum"><thead><tr><th>Article</th><th>Qté</th><th>PU</th><th>Total</th></tr></thead><tbody>
+   ${artRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td>${eur(r.price)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+   </tbody></table>`;
+  artBox.append(artBody);
+ }
  root.append(artBox);
 }
 
@@ -573,7 +598,7 @@ async function imageCanvas(file,mode="none"){
   }
  }
  if(!drawSource){
-  throw new Error("Impossible de lire cette image après plusieurs tentatives (type: "+(file.type||"inconnu")+", nom: "+(file.name||"?")+"). Détails : "+errors.join(" | ")+". Essaie de resélectionner la même photo, ou une autre photo/navigateur.");
+  throw new Error("Impossible de lire cette image après plusieurs tentatives (type: "+(file.type||"inconnu")+", nom: "+(file.name||"?")+"). Ouvre d'abord cette photo dans l'application Galerie de ton téléphone (pas un gestionnaire de fichiers), attends qu'elle s'affiche en entier, puis reviens ici et resélectionne-la — c'est un bug connu de Brave sur Android avec les photos pas encore mises en cache localement. Détails techniques : "+errors.join(" | "));
  }
 
  let max=3000,sc=Math.min(1,max/Math.max(srcW,srcH));
@@ -616,7 +641,21 @@ async function ocr(file){
    let c3=await imageCanvas(file,"binarize"),r3=await w.recognize(c3);
    if((r3.data.confidence||0)>conf){text=r3.data.text||text;conf=r3.data.confidence||conf}
   }
-  await w.terminate();document.querySelector("#raw").value=text.trim();bar.style.width="100%";st.textContent=`OCR terminé (${Math.round(conf)} %). Vérifie le texte puis « Analyser ».`;
+  await w.terminate();
+  document.querySelector("#raw").value=text.trim();bar.style.width="100%";
+  let head=document.querySelector("#textToggle"),body=document.querySelector("#textBody");
+  const GOOD=55;
+  if(conf>=GOOD&&text.trim().length>=20){
+   // OCR fiable : on enchaîne directement sur l'analyse, texte brut replié
+   // par défaut (toujours accessible en dépliant "📝 Texte reconnu" en cas de besoin).
+   head.classList.add("closed");body.style.display="none";
+   st.textContent=`OCR terminé (${Math.round(conf)} %). Analyse automatique…`;
+   parseText();
+  }else{
+   // OCR peu fiable : on force l'affichage du texte pour relecture/correction manuelle.
+   head.classList.remove("closed");body.style.display="";
+   st.textContent=`OCR terminé (${Math.round(conf)} %) — fiabilité faible, vérifie/corrige le texte ci-dessous puis clique « Analyser ».`;
+  }
  }catch(e){bar.style.width="0%";st.textContent="Erreur OCR : "+(e.message||e)}
 }
 document.querySelector("#camera").onchange=e=>{if(e.target.files[0])ocr(e.target.files[0])};
@@ -630,6 +669,13 @@ function openAddForm(){
  if(f.style.display==="block")document.querySelector("#addName").focus();
 }
 document.querySelector("#clearText").onclick=()=>{document.querySelector("#raw").value="";document.querySelector("#status").textContent="Zone de texte vidée.";document.querySelector("#bar").style.width="0%"};
+function toggleStaticSection(headerId,bodyId){
+ let head=document.querySelector(headerId),body=document.querySelector(bodyId);
+ let closed=head.classList.toggle("closed");
+ body.style.display=closed?"none":"";
+}
+document.querySelector("#textToggle").onclick=()=>toggleStaticSection("#textToggle","#textBody");
+document.querySelector("#listToggle").onclick=()=>{listOpen=!listOpen;document.querySelector("#listToggle").classList.toggle("closed",!listOpen);render()};
 document.querySelector("#addSubmit").onclick=()=>{
  let nameEl=document.querySelector("#addName"),qtyEl=document.querySelector("#addQty"),priceEl=document.querySelector("#addPrice");
  let name=nameEl.value.trim();
