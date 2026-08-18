@@ -37,7 +37,7 @@ h3{font-size:1rem;margin:0 0 10px}
 .box-header-row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .box-header-row .box-title{margin:0}
 .sec-toggle{cursor:pointer;user-select:none}
-.sec-toggle .chev{display:inline-block;transition:transform .15s;margin-right:4px;font-size:.85em;color:#888}
+.sec-toggle .chev{display:inline-block;transition:transform .15s;margin-right:7px;font-size:1.3em;color:#555;font-weight:900}
 .sec-toggle.closed .chev{transform:rotate(-90deg)}
 .pie-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .pie{width:170px;height:170px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px #eee}
@@ -121,9 +121,9 @@ const catsByMode={
 "Snacks & apéritif":["lacasitos","almendra","almendras","fruto seco","frutos secos","cacahuete","patat","chips","frit","frita","fritas","aperitivo","snack"],
 "Alcool":["vino","vin","cerveza","biere","bière","cava","champagne","whisky","ron","vodka","ginebra","licor",
  "mahou","estrella","cruzcampo","alhambra","heineken","amstel","celeste","cubillas","madremia","roble","crianza","reserva","duero","ribera","rioja","toro","tempranillo","garnacha","albarino"],
-"Fruits & légumes":["pomme","pommes","banane","bananes","tomate","tomates","salade","carotte","carottes","oignon","ail","courgette","poivron","pomme de terre","champignon","fruit","legume","legumes"],
+"Fruits & légumes":["pomme","pommes","banane","bananes","tomate","tomates","salade","carotte","carottes","oignon","ail","courgette","poivron","pomme de terre","champignon","fruit","legume","legumes","concombre","kiwi","citron","orange","poire","raisin","fraise","peche","abricot","melon","pasteque","avocat","poireau","brocoli","chou","epinard","haricot vert","radis"],
 "Viande & poisson":["poulet","pollo","boeuf","bœuf","ternera","porc","cerdo","costilla","jambon","jamon","steak","viande","carne","poisson","pescado","saumon","salmon","thon","atun"],
-"Produits laitiers":["lait","leche","beurre","mantequilla","fromage","queso","yaourt","yogur","creme fraiche","crema","oeuf","huevo","nata"],
+"Produits laitiers":["lait","leche","beurre","mantequilla","fromage","queso","yaourt","yogur","creme fraiche","crema","oeuf","huevo","nata","camembert","mozzarella","babybel","brie","gouda","edam","cheddar","emmental","comte","roquefort","feta","parmesan","rape","creme dessert","cremeux","yop","danone","activia"],
 "Épicerie":["pates","pasta","riz","arroz","farine","harina","sucre","azucar","sel","huile","aceite","vinaigre","conserve","sauce","cafe","the","cereales","pain","pan","biscotte","chocolat"],
 "Boissons":["eau","agua","jus","zumo","soda","refresco","batido","cola"],
 "Entretien":["lessive","vaisselle","eponge","nettoyant","papier toilette","sac poubelle","detergente","lavavajillas"],
@@ -168,28 +168,49 @@ let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="
 let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
 let savedWorkerUrl=localStorage.getItem("courses6_worker_url")||"";
 let customCats=JSON.parse(localStorage.getItem("courses6_customcats")||"[]");
-// Memoire de corrections : quand l'utilisateur renomme un article mal lu par
-// l'OCR, on retient la correspondance et on la réapplique automatiquement
-// la prochaine fois qu'un nom ressemblant (même déformé différemment) est
-// détecté. Ce n'est pas du vrai machine learning, mais ça capture l'essentiel
-// pour un usage récurrent sur les mêmes enseignes.
+// Memoire de corrections : quand l'utilisateur renomme un article, change sa
+// catégorie, ou confirme un prix via le bouton "Retenir les corrections",
+// on retient l'association et on la réapplique automatiquement la prochaine
+// fois qu'un nom ressemblant (même déformé différemment) est détecté.
+// Ce n'est pas du vrai machine learning, mais ça capture l'essentiel pour un
+// usage récurrent sur les mêmes enseignes. Le prix mémorisé n'est JAMAIS
+// appliqué automatiquement pendant l'analyse d'un ticket (les prix changent
+// légitimement) : il ne sert que de suggestion pré-remplie lors d'un ajout
+// manuel.
 let corrections=JSON.parse(localStorage.getItem("courses6_corrections")||"{}");
+Object.keys(corrections).forEach(k=>{if(typeof corrections[k]==="string")corrections[k]={corrected:corrections[k]}});
 function saveCorrections(){localStorage.setItem("courses6_corrections",JSON.stringify(corrections))}
-function rememberCorrection(oldName,newName){
- if(!oldName||!newName)return;
- if(norm(oldName)===norm(newName))return;
- corrections[oldName]=newName;
+function rememberCorrection(oldName,newName,cat,price){
+ if(!oldName)return;
+ let entry=corrections[oldName]||{};
+ if(newName&&norm(oldName)!==norm(newName))entry.corrected=newName;
+ if(cat)entry.category=cat;
+ if(price!=null&&price>0)entry.lastPrice=price;
+ if(!Object.keys(entry).length)return;
+ corrections[oldName]=entry;
  saveCorrections();
 }
-function applyLearnedCorrection(name){
- if(!name||!Object.keys(corrections).length)return name;
+function findCorrectionEntry(name){
+ if(!name||!Object.keys(corrections).length)return null;
  if(corrections[name])return corrections[name];
  let bestKey=null,bestSim=0;
  for(const k in corrections){
   let s=similarity(k,name);
   if(s>bestSim){bestSim=s;bestKey=k}
  }
- return(bestKey&&bestSim>=0.6)?corrections[bestKey]:name;
+ return(bestKey&&bestSim>=0.6)?corrections[bestKey]:null;
+}
+function applyLearnedCorrection(name){
+ let e=findCorrectionEntry(name);
+ return(e&&e.corrected)?e.corrected:name;
+}
+function applyLearnedCategory(name){
+ let e=findCorrectionEntry(name);
+ return(e&&e.category)?e.category:null;
+}
+function applyLearnedPrice(name){
+ let e=findCorrectionEntry(name);
+ return(e&&e.lastPrice)?e.lastPrice:null;
 }
 function saveCustomCats(){localStorage.setItem("courses6_customcats",JSON.stringify(customCats))}
 const customPalette=["#7a9e5c","#c17a4f","#5c8a9e","#9e5c8a","#b8a13a","#5c7a9e","#9e7a5c"];
@@ -294,7 +315,7 @@ function parseTicket(text){
    if(p){
     let unitPrice=isWeight?p.v:parseFloat(qtyPriceM[3].replace(",","."));
     let nm=applyLearnedCorrection(pendingName);
-    out.push({id:idSeq++,name:nm,qty,price:unitPrice,cat:category(nm),done:false,person:null});
+    out.push({id:idSeq++,name:nm,qty,price:unitPrice,cat:applyLearnedCategory(nm)||category(nm),done:false,person:null});
    }
    pendingName=null;
    continue;
@@ -320,7 +341,7 @@ function parseTicket(text){
   if(/\b(?:b\.?\s*imp|iva|importe|tarjet\w*|tef|cambio)\b/i.test(name))continue;
   name=applyLearnedCorrection(name);
   let unitPrice=qty>1?p.v/qty:p.v;
-  out.push({id:idSeq++,name,qty,price:unitPrice,cat:category(name),done:false,person:null});
+  out.push({id:idSeq++,name,qty,price:unitPrice,cat:applyLearnedCategory(name)||category(name),done:false,person:null});
   pendingName=null;
  }
  return {out,total:total??fallbackTotal};
@@ -333,7 +354,7 @@ function parseShopping(text){
   if((m=line.match(/^(\d+)\s*[x×]\s+(.+)$/i)))qty=+m[1],line=m[2];
   else if((m=line.match(/^(.+?)\s*[x×]\s*(\d+)$/i)))line=m[1],qty=+m[2];
   line=applyLearnedCorrection(line);
-  out.push({id:idSeq++,name:line,qty,price:0,cat:category(line),done:false,person:null});
+  out.push({id:idSeq++,name:line,qty,price:0,cat:applyLearnedCategory(line)||category(line),done:false,person:null});
  }
  return {out,total:null};
 }
@@ -450,10 +471,10 @@ function renderList(){
    row.querySelector(".cat-sel").onchange=(e)=>{
     if(e.target.value==="__new__"){
      let n=prompt("Nom de la nouvelle catégorie :");
-     if(n){n=n.trim();if(n){if(!customCats.includes(n))customCats.push(n),saveCustomCats();i.cat=n}}
+     if(n){n=n.trim();if(n){if(!customCats.includes(n))customCats.push(n),saveCustomCats();i.cat=n;rememberCorrection(i.name,null,n)}}
      save();render();return;
     }
-    i.cat=e.target.value;save();render();
+    i.cat=e.target.value;rememberCorrection(i.name,null,e.target.value);save();render();
    };
    if(mergeMode){
     let msel=row.querySelector(".mergeSel");
@@ -512,23 +533,33 @@ function renderTabs(root){
  if(people.length)root.insertAdjacentHTML("beforeend",`<div class="small" style="margin:4px 2px 0">Astuce : double-tape un onglet pour supprimer cette personne (les articles repassent en "Non assigné").</div>`);
  let toolbar=document.createElement("div");
  toolbar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
- toolbar.innerHTML=`<button class="btn secondary" id="tbClear">🗑️ Effacer la liste</button><button class="btn secondary" id="tbMerge">🔗 Fusionner</button><button class="btn secondary" id="tbAdd">➕ Ajouter</button><button class="btn secondary" id="tbExport">⬇️ Exporter</button><label class="btn secondary file" style="display:inline-flex">⬆️ Importer<input type="file" id="tbImport" accept="application/json,.json" style="display:none"></label>`;
+ toolbar.innerHTML=`<button class="btn secondary" id="tbClear">🗑️ Effacer la liste</button><button class="btn secondary" id="tbMerge">🔗 Fusionner</button><button class="btn secondary" id="tbAdd">➕ Ajouter</button><button class="btn secondary" id="tbRemember">💾 Retenir les corrections</button>`;
+ toolbar.querySelector("#tbRemember").onclick=rememberAllCurrent;
  toolbar.querySelector("#tbClear").onclick=clearList;
  toolbar.querySelector("#tbMerge").onclick=toggleMergeMode;
  toolbar.querySelector("#tbAdd").onclick=openAddForm;
- toolbar.querySelector("#tbExport").onclick=exportData;
- toolbar.querySelector("#tbImport").onchange=(e)=>{if(e.target.files[0])importData(e.target.files[0])};
  root.append(toolbar);
 }
+function rememberAllCurrent(){
+ if(!items.length){document.querySelector("#status").textContent="Aucun article à retenir pour l'instant.";return}
+ items.forEach(i=>rememberCorrection(i.name,null,i.cat,i.price));
+ document.querySelector("#status").textContent=`💾 ${items.length} article(s) retenu(s) (nom, catégorie, prix indicatif) pour les prochaines analyses.`;
+}
 function exportData(){
+ let defaultName="note-"+new Date().toISOString().slice(0,10);
+ let name=prompt("Nom du fichier à exporter :",defaultName);
+ if(name===null)return; // annulé
+ name=name.trim()||defaultName;
+ name=name.replace(/[\\/:*?"<>|]/g,"-"); // caractères interdits dans un nom de fichier
+ if(!name.toLowerCase().endsWith(".json"))name+=".json";
  let payload={
   version:1,exportedAt:new Date().toISOString(),
-  mode,items,people,payer,customCats
+  mode,items,people,payer,customCats,corrections
  };
  let blob=new Blob([JSON.stringify(payload,null,1)],{type:"application/json"});
  let url=URL.createObjectURL(blob);
  let a=document.createElement("a");
- a.href=url;a.download="note-"+new Date().toISOString().slice(0,10)+".json";
+ a.href=url;a.download=name;
  document.body.append(a);a.click();a.remove();
  URL.revokeObjectURL(url);
 }
@@ -543,6 +574,10 @@ function importData(file){
    people=Array.isArray(data.people)?data.people:[];
    payer=data.payer||null;
    customCats=Array.isArray(data.customCats)?data.customCats:[];
+   if(data.corrections&&typeof data.corrections==="object"){
+    Object.assign(corrections,data.corrections); // fusionne avec la mémoire déjà présente sur cet appareil
+    saveCorrections();
+   }
    if(data.mode&&catsByMode[data.mode]){mode=data.mode;cats=catsByMode[mode];localStorage.setItem("courses6_mode",mode)}
    activeTab="Tous";
    save();savePeople();savePayer();saveCustomCats();render();
@@ -677,6 +712,17 @@ function renderSummary(){
   artBox.append(artBody);
  }
  root.append(artBox);
+
+ let ioBox=document.createElement("div");ioBox.className="box";
+ ioBox.innerHTML=`<h3 class="box-title">💾 Sauvegarde</h3>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+   <button class="btn secondary" id="ioExport">⬇️ Exporter</button>
+   <label class="btn secondary file" style="display:inline-flex">⬆️ Importer<input type="file" id="ioImport" accept="application/json,.json" style="display:none"></label>
+  </div>
+  <div class="small" style="margin-top:6px">Exporte tout (articles, personnes, catégories perso, mémoire de corrections) dans un fichier à garder ou transférer sur un autre appareil.</div>`;
+ root.append(ioBox);
+ ioBox.querySelector("#ioExport").onclick=exportData;
+ ioBox.querySelector("#ioImport").onchange=(e)=>{if(e.target.files[0])importData(e.target.files[0])};
 }
 
 let tessPromise;
@@ -839,27 +885,26 @@ async function ocr(file){
   document.querySelector("#raw").value=text.trim();bar.style.width="100%";
   let head=document.querySelector("#textToggle"),body=document.querySelector("#textBody");
   let workerUrlSet=!!(document.querySelector("#workerUrl").value||"").trim();
-  if(workerUrlSet&&text.trim().length>=10){
-   // Un Worker IA est configuré (gratuit, Cloudflare Workers AI) : on
-   // l'utilise directement, plus robuste que le parsing local face aux
-   // mises en page inhabituelles.
-   head.classList.add("closed");body.style.display="none";
-   st.textContent=`OCR terminé (${Math.round(conf)} %). Analyse IA automatique…`;
-   await smartAnalyze();
-   return;
-  }
   let dry=detectAndParse(text.trim());
-  if(dry.out.length>=1){
-   // Au moins une ligne exploitable trouvée : on enchaîne directement sur
-   // l'analyse, texte brut replié par défaut (toujours accessible en
-   // dépliant "📝 Texte reconnu" en cas de besoin de correction).
-   head.classList.add("closed");body.style.display="none";
-   st.textContent=`OCR terminé (${Math.round(conf)} %). Analyse automatique…`;
-   parseText();
+  // Le parsing local est testé, réglé et vérifié sur de vrais tickets ; le
+  // Worker IA gratuit (petit modèle) s'est montré moins fiable en pratique
+  // (articles oubliés, catégories inventées). On privilégie donc le local
+  // par défaut, et on ne bascule sur l'IA automatiquement que si le local
+  // n'a presque rien trouvé — l'IA reste disponible manuellement sinon
+  // (bouton « 🤖 Analyse de secours »).
+  if(dry.out.length>=3||!workerUrlSet){
+   if(dry.out.length>=1){
+    head.classList.add("closed");body.style.display="none";
+    st.textContent=`OCR terminé (${Math.round(conf)} %). Analyse automatique…`;
+    parseText();
+   }else{
+    head.classList.remove("closed");body.style.display="";
+    st.textContent=`OCR terminé (${Math.round(conf)} %) — aucune ligne exploitable détectée, vérifie/corrige le texte ci-dessous puis clique « Analyser »${workerUrlSet?" ou « 🤖 Analyse de secours »":""}.`;
+   }
   }else{
-   // Rien d'exploitable détecté : on force l'affichage du texte pour relecture/correction manuelle.
-   head.classList.remove("closed");body.style.display="";
-   st.textContent=`OCR terminé (${Math.round(conf)} %) — aucune ligne exploitable détectée, vérifie/corrige le texte ci-dessous puis clique « Analyser ».`;
+   head.classList.add("closed");body.style.display="none";
+   st.textContent=`OCR terminé (${Math.round(conf)} %). Le parsing local n'a presque rien trouvé, tentative avec l'IA…`;
+   await smartAnalyze();
   }
  }catch(e){bar.style.width="0%";st.textContent="Erreur OCR : "+(e.message||e)}
 }
@@ -956,7 +1001,9 @@ async function smartAnalyze(){
      name=applyLearnedCorrection(name);
      let qty=Math.max(1,Math.round(+it.qty||1));
      let price=Math.max(0,+((it.unit_price!=null?it.unit_price:it.price))||0);
-     let cat=(it.category||it.cat||category(name)).toString().trim()||category(name);
+     let aiCat=(it.category||it.cat||"").toString().trim();
+     let validCats=[...Object.keys(cats),...customCats,"Autres"];
+     let cat=applyLearnedCategory(name)||(validCats.includes(aiCat)?aiCat:category(name));
      items.push({id:idSeq++,name,qty,price,cat,done:false,person:null});
      added++;
    });
@@ -997,15 +1044,22 @@ function toggleStaticSection(headerId,bodyId){
 document.querySelector("#textToggle").onclick=()=>toggleStaticSection("#textToggle","#textBody");
 document.querySelector("#scanToggle").onclick=()=>toggleStaticSection("#scanToggle","#scanBody");
 document.querySelector("#listToggle").onclick=()=>{listOpen=!listOpen;document.querySelector("#listToggle").classList.toggle("closed",!listOpen);render()};
+document.querySelector("#addName").addEventListener("blur",()=>{
+ let nameEl=document.querySelector("#addName"),priceEl=document.querySelector("#addPrice");
+ let name=nameEl.value.trim();
+ if(!name||priceEl.value)return; // ne pas écraser un prix déjà saisi
+ let suggested=applyLearnedPrice(name);
+ if(suggested){priceEl.value=suggested.toFixed(2);priceEl.placeholder="€ (suggestion : dernier prix connu)"}
+});
 document.querySelector("#addSubmit").onclick=()=>{
  let nameEl=document.querySelector("#addName"),qtyEl=document.querySelector("#addQty"),priceEl=document.querySelector("#addPrice");
  let name=nameEl.value.trim();
  if(!name)return nameEl.focus();
  let qty=Math.max(1,+qtyEl.value||1),price=Math.max(0,+priceEl.value||0);
- items.push({id:idSeq++,name,qty,price,cat:category(name),done:false,person:null});
+ items.push({id:idSeq++,name,qty,price,cat:applyLearnedCategory(name)||category(name),done:false,person:null});
  save();render();
  // Formulaire prêt pour l'ajout suivant (pratique pour saisir plusieurs articles d'affilée).
- nameEl.value="";qtyEl.value="1";priceEl.value="";nameEl.focus();
+ nameEl.value="";qtyEl.value="1";priceEl.value="";priceEl.placeholder="Prix €";nameEl.focus();
 };
 function doMerge(){
  if(mergeSelection.size<2)return;
