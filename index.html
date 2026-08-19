@@ -163,7 +163,7 @@ let items=JSON.parse(localStorage.getItem("courses6")||"[]"),lastTicketTotal=nul
 items.forEach(i=>{if(!Array.isArray(i.persons)){i.persons=i.person?[i.person]:[];delete i.person}});
 let idSeq=1+items.reduce((m,i)=>Math.max(m,i.id||0),0);
 let mergeMode=false,mergeSelection=new Set();
-let listOpen=true,personSummaryOpen=true,articleTableOpen=false,collapsedCats=new Set();
+let listOpen=true,personSummaryOpen=true,articleTableOpen=false,priceHistoryOpen=false,collapsedCats=new Set();
 let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="Tous";
 let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
 let savedWorkerUrl=localStorage.getItem("courses6_worker_url")||"";
@@ -185,7 +185,18 @@ function rememberCorrection(oldName,newName,cat,price){
  let entry=corrections[oldName]||{};
  if(newName&&norm(oldName)!==norm(newName))entry.corrected=newName;
  if(cat)entry.category=cat;
- if(price!=null&&price>0)entry.lastPrice=price;
+ if(price!=null&&price>0){
+  entry.lastPrice=price;
+  entry.priceHistory=entry.priceHistory||[];
+  // Évite d'empiler deux points quasi identiques le même jour (ex. plusieurs
+  // clics sur "Retenir" sur le même ticket) : on remplace le dernier point
+  // du jour au lieu d'en ajouter un nouveau.
+  let today=new Date().toISOString().slice(0,10);
+  let last=entry.priceHistory[entry.priceHistory.length-1];
+  if(last&&last.date===today)last.price=price;
+  else entry.priceHistory.push({date:today,price});
+  if(entry.priceHistory.length>20)entry.priceHistory=entry.priceHistory.slice(-20);
+ }
  if(!Object.keys(entry).length)return;
  corrections[oldName]=entry;
  saveCorrections();
@@ -211,6 +222,12 @@ function applyLearnedCategory(name){
 function applyLearnedPrice(name){
  let e=findCorrectionEntry(name);
  return(e&&e.lastPrice)?e.lastPrice:null;
+}
+function priceStats(history){
+ if(!history||!history.length)return null;
+ let prices=history.map(h=>h.price);
+ let avg=prices.reduce((s,p)=>s+p,0)/prices.length;
+ return{avg,min:Math.min(...prices),max:Math.max(...prices),last:prices[prices.length-1],n:prices.length};
 }
 function saveCustomCats(){localStorage.setItem("courses6_customcats",JSON.stringify(customCats))}
 const customPalette=["#7a9e5c","#c17a4f","#5c8a9e","#9e5c8a","#b8a13a","#5c7a9e","#9e7a5c"];
@@ -544,6 +561,7 @@ function rememberAllCurrent(){
  if(!items.length){document.querySelector("#status").textContent="Aucun article à retenir pour l'instant.";return}
  items.forEach(i=>rememberCorrection(i.name,null,i.cat,i.price));
  document.querySelector("#status").textContent=`💾 ${items.length} article(s) retenu(s) (nom, catégorie, prix indicatif) pour les prochaines analyses.`;
+ renderSummary();
 }
 function exportData(){
  let defaultName="note-"+new Date().toISOString().slice(0,10);
@@ -712,6 +730,28 @@ function renderSummary(){
   artBox.append(artBody);
  }
  root.append(artBox);
+
+ // --- Historique / moyennes de prix (mémoire de corrections) ---
+ let histEntries=Object.entries(corrections)
+  .map(([name,e])=>({name:e.corrected||name,stats:priceStats(e.priceHistory)}))
+  .filter(e=>e.stats&&e.stats.n>=1)
+  .sort((a,b)=>b.stats.n-a.stats.n||a.name.localeCompare(b.name));
+ if(histEntries.length){
+  let hBox=document.createElement("div");hBox.className="box";
+  let hHead=document.createElement("h3");hHead.className="box-title sec-toggle"+(priceHistoryOpen?"":" closed");
+  hHead.innerHTML=`<span class="chev">▾</span>📈 Prix moyens par article`;
+  hHead.onclick=()=>{priceHistoryOpen=!priceHistoryOpen;render()};
+  hBox.append(hHead);
+  if(priceHistoryOpen){
+   let hBody=document.createElement("div");
+   hBody.innerHTML=`<table class="sum"><thead><tr><th>Article</th><th>Moy.</th><th>Min–Max</th><th>Dernier</th></tr></thead><tbody>
+    ${histEntries.map(e=>`<tr><td>${esc(e.name)}${e.stats.n>1?` <span class="small">(${e.stats.n}×)</span>`:""}</td><td>${eur(e.stats.avg)}</td><td>${eur(e.stats.min)}–${eur(e.stats.max)}</td><td>${eur(e.stats.last)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="small" style="margin-top:6px">Alimenté par « 💾 Retenir les corrections ». Un seul point par jour et par article, jusqu'à 20 points d'historique gardés.</div>`;
+   hBox.append(hBody);
+  }
+  root.append(hBox);
+ }
 
  let ioBox=document.createElement("div");ioBox.className="box";
  ioBox.innerHTML=`<h3 class="box-title">💾 Sauvegarde</h3>
