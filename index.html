@@ -85,6 +85,10 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
   <div class="small" id="smartHint" style="margin-top:6px">L'analyse IA est facultative. Ton OCR et ton analyse classique restent locaux. L'IA n'est appelée que lorsque tu le demandes et le texte OCR est envoyé à ton Worker Cloudflare.</div>
   <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
    <input id="workerUrl" type="url" placeholder="URL du Worker IA (https://…workers.dev)" style="flex:1;min-width:180px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
+   <select id="aiModel" style="padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
+    <option value="@cf/meta/llama-3.2-3b-instruct">Llama 3.2 3B (rapide)</option>
+    <option value="@cf/meta/llama-3.1-8b-instruct">Llama 3.1 8B (plus fiable, plus lent)</option>
+   </select>
   </div>
  </div>
 </div>
@@ -162,7 +166,7 @@ function modeLabel(m){return m==="courses"?"Courses":m==="restaurant"?"Restauran
 let items=JSON.parse(localStorage.getItem("courses6")||"[]"),lastTicketTotal=null;
 items.forEach(i=>{if(!Array.isArray(i.persons)){i.persons=i.person?[i.person]:[];delete i.person}});
 let idSeq=1+items.reduce((m,i)=>Math.max(m,i.id||0),0);
-let mergeMode=false,mergeSelection=new Set();
+let searchQuery="";
 let listOpen=true,personSummaryOpen=true,articleTableOpen=false,priceHistoryOpen=false,collapsedCats=new Set();
 let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="Tous";
 let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
@@ -241,13 +245,20 @@ function norm(s){return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f
 function category(s){let x=norm(s);for(const[c,w]of Object.entries(cats))if(w.some(a=>x.includes(norm(a))))return c;return"Autres"}
 function bigrams(s){let x=norm(s).replace(/ /g,"");let b=new Set();for(let i=0;i<x.length-1;i++)b.add(x.slice(i,i+2));return b}
 function diceSim(a,b){let A=bigrams(a),B=bigrams(b);if(!A.size||!B.size)return 0;let n=0;A.forEach(x=>B.has(x)&&n++);return 2*n/(A.size+B.size)}
+const FILLER_WORDS=new Set(["menu","enfant","grand","petit","moyen","formule","plat","boisson","dessert","entree","entrada","sirop","verre","assiette","portion","the","les","des","aux","pour","avec","sans","gramme","grammes"]);
 function similarity(a,b){
- let A=new Set(norm(a).split(" ").filter(x=>x.length>2)),B=new Set(norm(b).split(" ").filter(x=>x.length>2)),n=0;
- A.forEach(x=>B.has(x)&&n++);
- let tokenSim=n/Math.max(A.size,B.size,1);
+ let A=new Set(norm(a).split(" ").filter(x=>x.length>2)),B=new Set(norm(b).split(" ").filter(x=>x.length>2));
+ let An=new Set([...A].filter(x=>!FILLER_WORDS.has(x))),Bn=new Set([...B].filter(x=>!FILLER_WORDS.has(x)));
  // La similarité par mots entiers échoue si l'OCR a abîmé un seul mot
  // (ex. "P12" lu "PI?"). On prend aussi une similarité par paires de
  // caractères (Dice), plus tolérante au bruit OCR ponctuel.
+ // Si après avoir retiré les mots génériques ("menu", "enfant"...) il ne
+ // reste plus rien à comparer d'un côté ou de l'autre, un score de
+ // ressemblance élevé ne veut plus rien dire (ex. "MENU ENFANT" et
+ // "SIROP ENFANT" ne partagent qu'un mot filler) : on plafonne le score.
+ if(An.size===0||Bn.size===0)return Math.min(diceSim(a,b),0.3);
+ let n=0;An.forEach(x=>Bn.has(x)&&n++);
+ let tokenSim=n/Math.max(An.size,Bn.size,1);
  return Math.max(tokenSim,diceSim(a,b));
 }
 function badName(s){
@@ -433,20 +444,23 @@ function renderModeTabs(){
 function renderList(){
  const root=document.querySelector("#list");root.innerHTML="";
  if(!listOpen)return;
- if(mergeMode){
-  let bar=document.createElement("div");bar.className="box";
-  bar.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-   <span>🔗 Coche 2 articles identiques (ou plus) à combiner.</span>
-   <button class="btn" id="mergeGo" ${mergeSelection.size>=2?"":"disabled"}>Fusionner (${mergeSelection.size})</button>
-   <button class="btn secondary" id="mergeCancel">Annuler</button>
-  </div>`;
-  root.append(bar);
-  bar.querySelector("#mergeCancel").onclick=()=>{mergeMode=false;mergeSelection.clear();render()};
-  bar.querySelector("#mergeGo").onclick=doMerge;
- }
  let list=visibleItems();
+ if(searchQuery.trim()){
+  let nq=norm(searchQuery);
+  list=list.filter(i=>norm(i.name).includes(nq));
+ }
+ if(items.length){
+  let sbar=document.createElement("div");sbar.className="box";sbar.style.padding="10px 12px";
+  sbar.innerHTML=`<input id="searchBox" type="text" placeholder="🔎 Rechercher un article…" value="${esc(searchQuery)}" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit;box-sizing:border-box">`;
+  root.append(sbar);
+  let sInput=sbar.querySelector("#searchBox");
+  sInput.oninput=()=>{searchQuery=sInput.value;render();let sb=document.querySelector("#searchBox");if(sb){sb.focus();sb.setSelectionRange(sb.value.length,sb.value.length)}};
+ }
  if(!list.length){
-  root.insertAdjacentHTML("beforeend",`<div class="box empty">${activeTab==="Tous"?"Aucun article pour l’instant. Scanne un ticket ou tape une liste puis clique « Analyser ».":"Aucun article assigné à "+esc(activeTab)+" pour l’instant."}</div>`);
+  let msg=searchQuery.trim()
+   ?"Aucun article ne correspond à « "+esc(searchQuery)+" »."
+   :(activeTab==="Tous"?"Aucun article pour l’instant. Scanne un ticket ou tape une liste puis clique « Analyser ».":"Aucun article assigné à "+esc(activeTab)+" pour l’instant.");
+  root.insertAdjacentHTML("beforeend",`<div class="box empty">${msg}</div>`);
   renderTabs(root);
   return;
  }
@@ -454,6 +468,14 @@ function renderList(){
  list.forEach(i=>(groups[i.cat]??=[]).push(i));
  // Catégories triées par dépense décroissante
  let order=Object.entries(groups).map(([c,arr])=>[c,arr,arr.reduce((s,i)=>s+i.price*i.qty,0)]).sort((a,b)=>b[2]-a[2]);
+ if(order.length>1){
+  let allBar=document.createElement("div");
+  allBar.style.cssText="display:flex;gap:8px;margin:4px 2px 8px";
+  allBar.innerHTML=`<button class="btn secondary" id="collapseAll" style="padding:6px 12px;font-size:.85rem">Tout réduire</button><button class="btn secondary" id="expandAll" style="padding:6px 12px;font-size:.85rem">Tout développer</button>`;
+  root.append(allBar);
+  allBar.querySelector("#collapseAll").onclick=()=>{order.forEach(([c])=>collapsedCats.add(c));render()};
+  allBar.querySelector("#expandAll").onclick=()=>{collapsedCats.clear();render()};
+ }
  order.forEach(([cat,arr,catSum])=>{
   let d=document.createElement("div");d.className="box cat";
   let collapsed=collapsedCats.has(cat);
@@ -465,9 +487,7 @@ function renderList(){
   if(collapsed){root.append(d);return}
   arr.forEach(i=>{
    let row=document.createElement("div");row.className="item";
-   let rightBtn=mergeMode
-    ?`<input type="checkbox" class="mergeSel" ${mergeSelection.has(i.id)?"checked":""} title="Sélectionner pour fusion">`
-    :`<button class="del" title="Supprimer cet article" aria-label="Supprimer">✕</button>`;
+   let rightBtn=`<button class="del" title="Supprimer cet article" aria-label="Supprimer">✕</button>`;
    let personChips="";
    if(people.length){
     let allSel=people.length>0&&people.every(p=>(i.persons||[]).includes(p));
@@ -493,13 +513,8 @@ function renderList(){
     }
     i.cat=e.target.value;rememberCorrection(i.name,null,e.target.value);save();render();
    };
-   if(mergeMode){
-    let msel=row.querySelector(".mergeSel");
-    msel.onchange=()=>{msel.checked?mergeSelection.add(i.id):mergeSelection.delete(i.id);render()};
-   }else{
-    let delBtn=row.querySelector(".del");
-    delBtn.onclick=()=>{let idx=items.indexOf(i);if(idx>-1){items.splice(idx,1);save();render()}};
-   }
+   let delBtn=row.querySelector(".del");
+   delBtn.onclick=()=>{let idx=items.indexOf(i);if(idx>-1){items.splice(idx,1);save();render()}};
    let psel=row.querySelector(".person-sel");
    if(psel)psel.onchange=()=>{i.person=psel.value||null;save();render()};
    row.querySelectorAll(".persons-row .chip").forEach(chip=>{
@@ -550,17 +565,18 @@ function renderTabs(root){
  if(people.length)root.insertAdjacentHTML("beforeend",`<div class="small" style="margin:4px 2px 0">Astuce : double-tape un onglet pour supprimer cette personne (les articles repassent en "Non assigné").</div>`);
  let toolbar=document.createElement("div");
  toolbar.style.cssText="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px";
- toolbar.innerHTML=`<button class="btn secondary" id="tbClear">🗑️ Effacer la liste</button><button class="btn secondary" id="tbMerge">🔗 Fusionner</button><button class="btn secondary" id="tbAdd">➕ Ajouter</button><button class="btn secondary" id="tbRemember">💾 Retenir les corrections</button>`;
+ toolbar.innerHTML=`<button class="btn secondary" id="tbClear">🗑️ Effacer la liste</button><button class="btn secondary" id="tbAdd">➕ Ajouter</button><button class="btn secondary" id="tbRemember">💾 Retenir les corrections</button>`;
  toolbar.querySelector("#tbRemember").onclick=rememberAllCurrent;
  toolbar.querySelector("#tbClear").onclick=clearList;
- toolbar.querySelector("#tbMerge").onclick=toggleMergeMode;
  toolbar.querySelector("#tbAdd").onclick=openAddForm;
  root.append(toolbar);
 }
 function rememberAllCurrent(){
- if(!items.length){document.querySelector("#status").textContent="Aucun article à retenir pour l'instant.";return}
+ let btn=document.querySelector("#tbRemember");
+ if(!items.length){if(btn){let o=btn.textContent;btn.textContent="Rien à retenir";setTimeout(()=>btn.textContent=o,1500)}return}
  items.forEach(i=>rememberCorrection(i.name,null,i.cat,i.price));
  document.querySelector("#status").textContent=`💾 ${items.length} article(s) retenu(s) (nom, catégorie, prix indicatif) pour les prochaines analyses.`;
+ if(btn){let o=btn.textContent;btn.textContent=`✅ ${items.length} retenu(s)`;setTimeout(()=>{if(document.querySelector("#tbRemember"))document.querySelector("#tbRemember").textContent=o},1800)}
  renderSummary();
 }
 function exportData(){
@@ -715,17 +731,19 @@ function renderSummary(){
   </tbody></table>`;
  root.append(catBox);
 
- // --- Tableau par article (liste finale) ---
- let artRows=list.map(i=>({name:i.name,cat:i.cat,qty:i.qty,price:i.price,total:(i.qty||0)*(i.price||0)})).sort((a,b)=>b.total-a.total);
+ // --- Tableau "Ticket" : dans l'ordre du ticket (ordre d'ajout), avec total et nb de lignes en bas ---
+ let artRows=list.map(i=>({name:i.name,cat:i.cat,qty:i.qty,price:i.price,total:(i.qty||0)*(i.price||0)}));
+ let artGrand=artRows.reduce((s,r)=>s+r.total,0);
  let artBox=document.createElement("div");artBox.className="box";
  let artHead=document.createElement("h3");artHead.className="box-title sec-toggle"+(articleTableOpen?"":" closed");
- artHead.innerHTML=`<span class="chev">▾</span>🧾 Total par article${activeTab!=="Tous"?" — "+esc(activeTab):""}`;
+ artHead.innerHTML=`<span class="chev">▾</span>🧾 Ticket${activeTab!=="Tous"?" — "+esc(activeTab):""}`;
  artHead.onclick=()=>{articleTableOpen=!articleTableOpen;render()};
  artBox.append(artHead);
  if(articleTableOpen){
   let artBody=document.createElement("div");
   artBody.innerHTML=`<table class="sum"><thead><tr><th>Article</th><th>Qté</th><th>PU</th><th>Total</th></tr></thead><tbody>
    ${artRows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.qty}</td><td>${eur(r.price)}</td><td>${eur(r.total)}</td></tr>`).join("")}
+   <tr class="grand"><td>Total (${artRows.length} ligne${artRows.length>1?"s":""})</td><td></td><td></td><td>${eur(artGrand)}</td></tr>
    </tbody></table>`;
   artBox.append(artBody);
  }
@@ -955,6 +973,8 @@ document.querySelector("#smartAnalyze").onclick=smartAnalyze;
 document.querySelector("#copyForAnalysis").onclick=copyForAnalysis;
 document.querySelector("#workerUrl").value=savedWorkerUrl;
 document.querySelector("#workerUrl").onchange=(e)=>{localStorage.setItem("courses6_worker_url",e.target.value.trim())};
+document.querySelector("#aiModel").value=localStorage.getItem("courses6_ai_model")||"@cf/meta/llama-3.2-3b-instruct";
+document.querySelector("#aiModel").onchange=(e)=>{localStorage.setItem("courses6_ai_model",e.target.value)};
 async function copyForAnalysis(){
  let raw=document.querySelector("#raw").value;
  let lines=[];
@@ -1006,6 +1026,7 @@ async function smartAnalyze(){
  let st=document.querySelector("#status");
  if(!text){st.textContent="Rien à analyser : la zone de texte est vide.";return}
  let workerUrl=(document.querySelector("#workerUrl").value||"").trim();
+ let chosenModel=(document.querySelector("#aiModel").value||"").trim();
  if(!workerUrl){
    st.textContent="Indique d'abord l'URL de ton Worker Cloudflare IA.";
    document.querySelector("#workerUrl").focus();
@@ -1020,6 +1041,7 @@ async function smartAnalyze(){
      headers:{"Content-Type":"application/json"},
      body:JSON.stringify({
        text,
+       model:chosenModel,
        mode,
        currentItems:items.map(i=>({name:i.name,qty:i.qty,price:i.price,cat:i.cat})),
        detectedTotal:lastTicketTotal
@@ -1027,7 +1049,7 @@ async function smartAnalyze(){
    });
    const data=await response.json().catch(()=>null);
    if(!response.ok){
-     throw new Error("HTTP "+response.status+(data&&data.error?": "+data.error:""));
+     throw new Error("HTTP "+response.status+(data&&data.error?": "+data.error:"")+(data&&data.detail?" — "+data.detail:""));
    }
    if(!data||!Array.isArray(data.items)){
      throw new Error("Réponse IA invalide : aucune liste d'articles.");
@@ -1054,7 +1076,8 @@ async function smartAnalyze(){
 
    let warnings=Array.isArray(data.warnings)?data.warnings:[];
    let conf=data.confidence!=null?Math.round(+data.confidence*100):null;
-   let msg=`🤖 IA : ${added} article(s)`;
+   let modelUsed=data.model?" ("+data.model.replace("@cf/meta/","")+")":"";
+   let msg=`🤖 IA${modelUsed} : ${added} article(s)`;
    if(conf!=null)msg+=` — confiance ${conf} %`;
    if(data.total!=null)msg+=` — total ${(+data.total).toFixed(2)} €`;
    if(warnings.length)msg+=` — ⚠️ ${warnings.length} point(s) à vérifier`;
@@ -1069,7 +1092,6 @@ async function smartAnalyze(){
  }
 }
 function clearList(){if(confirm("Effacer toute la liste ?")){items=[];lastTicketTotal=null;save();render()}}
-function toggleMergeMode(){mergeMode=!mergeMode;mergeSelection.clear();render()}
 function openAddForm(){
  let f=document.querySelector("#addForm");
  f.style.display=f.style.display==="none"?"block":"none";
@@ -1100,21 +1122,12 @@ document.querySelector("#addSubmit").onclick=()=>{
  save();render();
  // Formulaire prêt pour l'ajout suivant (pratique pour saisir plusieurs articles d'affilée).
  nameEl.value="";qtyEl.value="1";priceEl.value="";priceEl.placeholder="Prix €";nameEl.focus();
+ // Le nouvel article peut atterrir dans une catégorie tout en haut de la
+ // liste (triée par dépense) : on reste ancré près du formulaire plutôt que
+ // de forcer l'utilisateur à remonter puis redescendre à chaque ajout.
+ let af=document.querySelector("#addForm");
+ if(af&&typeof af.scrollIntoView==="function")af.scrollIntoView({block:"center"});
 };
-function doMerge(){
- if(mergeSelection.size<2)return;
- let selected=items.filter(i=>mergeSelection.has(i.id));
- if(selected.length<2)return;
- let totalQty=selected.reduce((s,i)=>s+(+i.qty||0),0);
- let totalSpent=selected.reduce((s,i)=>s+(+i.qty||0)*(+i.price||0),0);
- let keep=selected[0];
- keep.qty=totalQty||1;
- keep.price=totalQty?totalSpent/totalQty:totalSpent;
- // On retire les autres articles fusionnés, on garde le nom/catégorie du premier sélectionné.
- items=items.filter(i=>i===keep||!mergeSelection.has(i.id));
- mergeMode=false;mergeSelection.clear();
- save();render();
-}
 render();
 </script>
 </body>
