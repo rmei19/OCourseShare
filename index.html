@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f5f5f5">
-<title>🛒 Liste de courses OCR — V8.4</title>
+<title>🛒 Liste de courses OCR — V8.5</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
 main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
@@ -56,7 +56,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </head>
 <body>
 <main>
-<h1>📝 Note <span class="small">V8.4</span></h1>
+<h1>📝 Note <span class="small">V8.5</span></h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
 
 <div class="box">
@@ -378,7 +378,7 @@ function parseTicket(text){
  }
  return {out,total:total??fallbackTotal};
 }
-/* ===================== V8.4 : résolution globale =====================
+/* ===================== V8.5 : résolution globale =====================
    On ne choisit plus 840/8,40 ou 0480/0,480 immédiatement.
    Chaque ligne produit génère plusieurs hypothèses. Le solveur choisit ensuite
    la combinaison qui respecte au mieux les équations, TOTAL(n) et le total payé. */
@@ -474,7 +474,7 @@ function v83LineHypotheses(line){
      for(let u of A)for(let a of B){
        if(u>.01&&u<5000&&a>.01&&a<5000){
          let score=v83Close(u,a)?88:55-Math.min(40,Math.abs(u-a));
-         h.push({kind:"qty",qty:1,unit:u,amount:a,err:Math.abs(u-a),score});
+         h.push({kind:"qty",qty:1,unit:a,amount:a,ocrUnit:u,err:Math.abs(u-a),score});
        }
      }
    }else{
@@ -563,7 +563,8 @@ function parseTicketV83(text){
  if(solved&&chosen){
    chosen.forEach((g,k)=>{
      let h=solved.picks[k],name=applyLearnedCorrection(g.name);
-     out.push({id:idSeq++,name,qty:h.kind==="weight"?+h.qty.toFixed(3):h.qty,price:h.unit,
+     let displayPrice = h.kind==="weight" ? h.unit : (h.qty===1 ? h.amount : h.unit);
+     out.push({id:idSeq++,name,qty:h.kind==="weight"?+h.qty.toFixed(3):h.qty,price:displayPrice,
        cat:applyLearnedCategory(name)||category(name),done:false,person:null,
        _v83:{amount:h.amount,score:h.score,kind:h.kind,repaired:!!h.repaired}});
    });
@@ -616,7 +617,7 @@ function parseText(){
  const ticket=r.ticket;
  lastTicketTotal=r.total;
  items=[];mergeNew(r.out);save();render();
- lastAnalysisSource="Analyse locale V8.4 (sans IA)";
+ lastAnalysisSource="Analyse locale V8.5 (sans IA)";
  document.querySelector("#status").textContent=ticket
    ? `${r.out.length} article(s). ${r.total!=null?(r.delta!=null&&r.delta<=.06?"✅ Cohérence ticket : "+eur(r.total)+" / "+eur(r.total):"⚠️ Somme "+eur(r.out.reduce((s,i)=>s+i.qty*i.price,0))+" — total détecté "+eur(r.total)):"Total non détecté."}`
    : `${r.out.length} article(s) reconnu(s).`;
@@ -1256,7 +1257,7 @@ async function smartAnalyze(){
      throw new Error("Réponse IA invalide : aucune liste d'articles.");
    }
 
-   // V8.4 : l'IA propose, l'arbitre mathématique décide.
+   // V8.5 : l'IA propose, l'arbitre mathématique décide.
    const local=detectAndParse(text);
    let proposed=[];
    data.items.forEach(it=>{
