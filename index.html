@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f5f5f5">
-<title>🛒 Liste de courses OCR — V8.2</title>
+<title>🛒 Liste de courses OCR — V8.3</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
 main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
@@ -56,7 +56,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </head>
 <body>
 <main>
-<h1>📝 Note <span class="small">V8.2</span></h1>
+<h1>📝 Note <span class="small">V8.3</span></h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
 
 <div class="box">
@@ -378,175 +378,170 @@ function parseTicket(text){
  }
  return {out,total:total??fallbackTotal};
 }
-/* ===================== V8.2 : arbitre structurel + mathématique =====================
-   1) repère d'abord les descriptions d'articles ;
-   2) rattache la ligne numérique suivante à cette description ;
-   3) valide quantité/poids × prix unitaire = montant ;
-   4) utilise TOTAL (n) et le total payé comme contraintes globales.
-   L'objectif est de ne jamais transformer une ligne de chiffres bruitée en nom. */
-function v82NormNum(t){ return String(t||"").replace(/\s/g,"").replace(",","."); }
-function v82RawNums(line){
- return [...String(line).matchAll(/\d+(?:[,.]\d+)?/g)].map(m=>({raw:m[0],v:parseFloat(v82NormNum(m[0])),i:m.index}));
+/* ===================== V8.3 : résolution globale =====================
+   On ne choisit plus 840/8,40 ou 0480/0,480 immédiatement.
+   Chaque ligne produit génère plusieurs hypothèses. Le solveur choisit ensuite
+   la combinaison qui respecte au mieux les équations, TOTAL(n) et le total payé. */
+function v83N(t){return String(t||"").replace(/\s/g,"").replace(",",".")}
+function v83Nums(line){return [...String(line).matchAll(/\d+(?:[,.]\d+)?/g)].map(m=>({raw:m[0],i:m.index}))}
+function v83Uniq(a){return [...new Set(a.filter(Number.isFinite).map(x=>+x.toFixed(6)))]}
+function v83Money(raw){
+ let z=v83N(raw),v=parseFloat(z),a=[];
+ if(!isFinite(v))return a;
+ a.push(v);
+ if(!z.includes(".")&&z.length>=3&&z.length<=6)a.push(parseInt(z,10)/100);
+ return v83Uniq(a).filter(x=>x>=0&&x<10000);
 }
-function v82Money(raw){
- let z=v82NormNum(raw), v=parseFloat(z), a=[];
- if(!isFinite(v)) return a;
- const add=x=>{if(isFinite(x)&&x>=0&&!a.some(y=>Math.abs(y-x)<1e-9))a.push(x)};
- add(v);
- if(!z.includes(".") && z.length>=3 && z.length<=5) add(parseInt(z,10)/100);
- return a;
+function v83Weight(raw){
+ let z=v83N(raw),v=parseFloat(z),a=[];
+ if(isFinite(v))a.push(v);
+ if(!z.includes(".")){
+   let n=parseInt(z,10);
+   if(z.length===4&&z[0]==="0")a.push(n/1000);
+   if(z.length===3)a.push(n/1000);
+   if(z.length===4)a.push(n/1000);
+ }
+ return v83Uniq(a).filter(x=>x>0&&x<20);
 }
-function v82Close(a,b,tol=.04){ return Math.abs(a-b)<=Math.max(tol,Math.abs(b)*.008); }
-function v82Meta(line){
+function v83Close(a,b,t=.04){return Math.abs(a-b)<=Math.max(t,Math.abs(b)*.008)}
+function v83Meta(line){
  let x=norm(line);
- return /(?:siret|sret|srie|sirie|siriet|numero de ticket|numéro de ticket|vendeur|heure|balance|telephone|t[eé]l|adresse|merci|tva|base|rendu|monnaie|caisse|paiement)/i.test(x)
+ return /(?:siret|srret|sret|srie|sirie|numero de ticket|numéro de ticket|vendeur|heure|balance|telephone|t[eé]l|adresse|merci|tva|base|rendu|monnaie|caisse|paiement|surie)/i.test(x)
    || /^(?:plu|art|description|qte|qté|net|prix|montant)\b/i.test(x);
 }
-function v82TotalInfo(lines){
- let candidates=[], count=null;
+function v83TotalInfo(lines){
+ let c=[],count=null;
  lines.forEach((line,idx)=>{
-   let x=norm(line), ns=v82RawNums(line);
-   let cm=line.match(/\bTOTAL\s*\(\s*(\d{1,3})\s*\)/i);
-   if(cm) count=+cm[1];
-   if(!ns.length)return;
+   let cm=line.match(/\bTOTAL\s*\(\s*(\d{1,3})\s*\)/i); if(cm)count=+cm[1];
+   let x=norm(line),ns=v83Nums(line); if(!ns.length)return;
    let rank=0;
-   if(/\b(?:net a payer|total a payer|total ttc)\b/i.test(x)) rank=100;
-   else if(/^\s*total(?:\s*\(\s*\d+\s*\))?\b/i.test(line) && !/\b(?:ht|tva|alimentaire|beaute|sante|hygiene)\b/i.test(x)) rank=95;
-   else if(/\b(?:espece|esp[eè]ces|carte|cb|tarjet)\b/i.test(x)) rank=75;
-   if(rank){
-     for(const v of v82Money(ns[ns.length-1].raw)) if(v>0&&v<10000) candidates.push({v,rank,idx});
-   }
+   if(/\b(?:net a payer|total a payer|total ttc)\b/i.test(x))rank=100;
+   else if(/^\s*total(?:\s*\(\s*\d+\s*\))?\b/i.test(line)&&!/\b(?:ht|tva|alimentaire|beaute|sante|hygiene)\b/i.test(x))rank=95;
+   else if(/\b(?:espece|esp[eè]ces|carte|cb|tarjet)\b/i.test(x))rank=75;
+   if(rank)for(let v of v83Money(ns.at(-1).raw))if(v>0)c.push({v,rank,idx});
  });
- candidates.sort((a,b)=>b.rank-a.rank||b.idx-a.idx);
- return {candidates,count};
+ c.sort((a,b)=>b.rank-a.rank);
+ return {c,count};
 }
-function v82LooksDescription(line){
- let x=String(line).trim(), n=norm(x);
- if(!x||v82Meta(x)) return false;
- if(/^\W+$/.test(x)) return false;
- if(/\b(?:total|sous total|esp[eè]ce|carte|tva)\b/i.test(n)) return false;
- // remove common PLU/article prefix: "1 (00) PETIT PALET"
- let y=x.replace(/^\s*\d{1,3}\s*\([^)]*\)\s*/,"").replace(/^\s*\d{1,3}\s+(?=[A-Za-zÀ-ÿ])/,"").trim();
- let letters=(y.match(/[A-Za-zÀ-ÿ]/g)||[]).length;
- let digits=(y.match(/\d/g)||[]).length;
- return y.length>=3 && letters>=3 && letters>=digits && !/^(?:kg|pcs?|un|x)\b/i.test(y);
+function v83Desc(line){
+ if(!line||v83Meta(line))return false;
+ let y=String(line).replace(/^\s*\d{1,3}\s*\([^)]*\)\s*/,"").replace(/^\s*\d{1,3}\s+(?=[A-Za-zÀ-ÿ])/,"").trim();
+ if(/\b(?:total|esp[eè]ce|tva)\b/i.test(norm(y)))return false;
+ let L=(y.match(/[A-Za-zÀ-ÿ]/g)||[]).length,D=(y.match(/\d/g)||[]).length;
+ return y.length>=3&&L>=3&&L>=D&&!/^(?:kg|pcs?|un|x)\b/i.test(y);
 }
-function v82CleanDescription(line){
- return cleanName(String(line)
-   .replace(/^\s*\d{1,3}\s*\([^)]*\)\s*/,"")
-   .replace(/^\s*\d{1,3}\s+(?=[A-Za-zÀ-ÿ])/,"")
-   .replace(/^\*+/,"").trim(),null);
+function v83Clean(line){
+ return cleanName(String(line).replace(/^\s*\d{1,3}\s*\([^)]*\)\s*/,"")
+ .replace(/^\s*\d{1,3}\s+(?=[A-Za-zÀ-ÿ])/,"").replace(/^\*+/,"").trim(),null);
 }
-function v82InferDetail(line){
- let ns=v82RawNums(line);
- if(!ns.length) return null;
- let lower=line.toLowerCase();
+function v83LineHypotheses(line){
+ let ns=v83Nums(line),h=[];
+ if(!ns.length)return h;
 
- // Weighted line. The OCR may damage the weight, so amount/unit can repair it.
- if(/kg/.test(lower) && ns.length>=2){
-   let unitIndex=ns.length>=3?1:0, amountIndex=ns.length>=3?2:1;
-   let units=v82Money(ns[unitIndex].raw).filter(v=>v>.05&&v<500);
-   let amounts=v82Money(ns[amountIndex].raw).filter(v=>v>.01&&v<5000);
-   let weightRaw=ns.length>=3?ns[0].raw:null, best=null;
-   for(const u of units) for(const a of amounts){
-     let inferred=a/u;
-     let candidates=[];
-     if(weightRaw){
-       let z=v82NormNum(weightRaw), w=parseFloat(z);
-       if(isFinite(w)) candidates.push(w);
-       if(!z.includes(".")){
-         if(z.length===4&&z[0]==="0") candidates.push(parseInt(z,10)/1000);
-         if(z.length===3) candidates.push(parseInt(z,10)/1000);
+ // Weight × €/kg = amount. Keep every plausible decimal interpretation.
+ if(/kg/i.test(line)&&ns.length>=3){
+   for(let w of v83Weight(ns[0].raw))
+    for(let u of v83Money(ns[1].raw).filter(x=>x>.05&&x<500))
+     for(let a of v83Money(ns[2].raw).filter(x=>x>.01&&x<5000)){
+       let err=Math.abs(w*u-a);
+       h.push({kind:"weight",qty:w,unit:u,amount:a,err,score:err<.04?100:Math.max(0,65-err*12)});
+     }
+   // Arithmetic repair of a damaged OCR weight, e.g. 0205 but 6.05/26.90 => .225.
+   for(let u of v83Money(ns[1].raw).filter(x=>x>.05&&x<500))
+    for(let a of v83Money(ns[2].raw).filter(x=>x>.01&&x<5000)){
+      let w=+(a/u).toFixed(3),err=Math.abs(w*u-a);
+      if(w>0&&w<20)h.push({kind:"weight",qty:w,unit:u,amount:a,err,score:92,repaired:true});
+    }
+ }
+ // Piece/price lines: all pairs of monetary readings; tolerate OCR words between them.
+ if(!/kg/i.test(line)){
+   let toks=ns.map(n=>v83Money(n.raw));
+   if(ns.length>=2){
+     let A=toks[ns.length-2],B=toks[ns.length-1];
+     for(let u of A)for(let a of B){
+       if(u>.01&&u<5000&&a>.01&&a<5000){
+         let score=v83Close(u,a)?88:55-Math.min(40,Math.abs(u-a));
+         h.push({kind:"qty",qty:1,unit:u,amount:a,err:Math.abs(u-a),score});
        }
      }
-     candidates.push(inferred);
-     for(let w of candidates){
-       if(!(w>0&&w<20))continue;
-       let err=Math.abs(w*u-a), repaired=!v82Close(w*u,a);
-       // If OCR weight disagrees, amount/unit is the safest correction.
-       if(repaired && Math.abs(w-inferred)>.0005) w=inferred;
-       err=Math.abs(w*u-a);
-       let cand={kind:"weight",qty:w,unit:u,amount:a,confidence:v82Close(w*u,a)?1:.55,repaired:weightRaw?Math.abs(w-inferred)<.0005:false};
-       if(!best||cand.confidence>best.confidence)best=cand;
+   }else{
+     for(let a of toks[0])if(a>.01&&a<5000)h.push({kind:"inline",qty:1,unit:a,amount:a,err:0,score:55});
+   }
+ }
+ h.sort((a,b)=>b.score-a.score);
+ return h.slice(0,12);
+}
+function v83Solve(groups,totalInfo){
+ // Dynamic programming: retain the best few partial sums instead of greedily
+ // deciding each ambiguous number. Amounts are stored in cents.
+ let states=[{sum:0,score:0,picks:[]}];
+ for(let g=0;g<groups.length;g++){
+   let next=[];
+   for(let st of states)for(let h of groups[g].hyps){
+     let cents=Math.round(h.amount*100);
+     next.push({sum:st.sum+cents,score:st.score+h.score,picks:[...st.picks,h]});
+   }
+   // Keep diversity by sum; best hypothesis for each subtotal, then cap.
+   let by=new Map();
+   for(let x of next){let old=by.get(x.sum);if(!old||x.score>old.score)by.set(x.sum,x)}
+   states=[...by.values()].sort((a,b)=>b.score-a.score).slice(0,800);
+ }
+ let totals=totalInfo.c.length?totalInfo.c:[{v:null,rank:0}];
+ let best=null;
+ for(let st of states)for(let t of totals){
+   let delta=t.v==null?0:Math.abs(st.sum/100-t.v);
+   // Global total dominates local OCR ambiguity.
+   let globalScore=st.score-(t.v==null?0:delta*140)+(t.v!=null&&delta<=.06?250:0)+(t.rank||0)*.15;
+   let cand={...st,total:t.v,delta,globalScore};
+   if(!best||cand.globalScore>best.globalScore)best=cand;
+ }
+ return best;
+}
+function parseTicketV83(text){
+ let lines=text.split(/\n/).map(l=>l.replace(/\s+/g," ").trim()).filter(Boolean);
+ let ti=v83TotalInfo(lines),groups=[],used=new Set(),warnings=[];
+
+ // Description -> next numerical line (max two lines).
+ for(let i=0;i<lines.length;i++){
+   if(!v83Desc(lines[i])||used.has(i))continue;
+   for(let j=i+1;j<=Math.min(lines.length-1,i+2);j++){
+     if(v83Meta(lines[j])||v83Desc(lines[j]))break;
+     let hyps=v83LineHypotheses(lines[j]);
+     if(hyps.length){
+       let name=v83Clean(lines[i]);
+       if(name&&!badName(name)){groups.push({name,hyps,di:i,ni:j});used.add(i);used.add(j)}
+       break;
      }
    }
-   if(best)return best;
  }
-
- // Pieces / quantity. OCR examples: "tpes 750 750", "1,70 1.70".
- let moneyTokens=ns.flatMap((n,idx)=>v82Money(n.raw).map(v=>({v,idx})));
- if(moneyTokens.length){
-   // Search equal unit/amount pair first: 750 750 -> 7.50 / 7.50
-   for(let a=0;a<moneyTokens.length;a++)for(let b=a+1;b<moneyTokens.length;b++){
-     if(v82Close(moneyTokens[a].v,moneyTokens[b].v) && moneyTokens[a].v>0 && moneyTokens[a].v<1000)
-       return {kind:"qty",qty:1,unit:moneyTokens[a].v,amount:moneyTokens[b].v,confidence:.9};
-   }
-   // Last monetary value is normally the line amount.
-   let amountOpts=v82Money(ns[ns.length-1].raw).filter(v=>v>.01&&v<5000);
-   if(amountOpts.length){
-     let amount=amountOpts[amountOpts.length-1];
-     return {kind:"inline",qty:1,unit:amount,amount,confidence:.65};
-   }
+ // TOTAL(n) can reject spurious header/address groups: choose a contiguous subset
+ // of the expected size, favouring later receipt-body groups and total coherence.
+ let groupSets=[groups];
+ if(ti.count&&groups.length>ti.count){
+   groupSets=[];
+   for(let a=0;a<=groups.length-ti.count;a++)groupSets.push(groups.slice(a,a+ti.count));
  }
- return null;
-}
-function parseTicketV82(text){
- let lines=text.split(/\n/).map(l=>l.replace(/\s+/g," ").trim()).filter(Boolean);
- let ti=v82TotalInfo(lines), total=ti.candidates.length?ti.candidates[0].v:null;
- let out=[], used=new Set(), warnings=[];
-
- const pushItem=(name,d,descIdx,detailIdx)=>{
-   name=v82CleanDescription(name);
-   if(!name||name.length<3||badName(name)||v82Meta(name))return false;
-   name=applyLearnedCorrection(name);
-   out.push({id:idSeq++,name,qty:d.qty,price:d.unit,
-     cat:applyLearnedCategory(name)||category(name),done:false,person:null,
-     _v82:{amount:d.amount,confidence:d.confidence,kind:d.kind,repaired:!!d.repaired,descIdx,detailIdx}});
-   used.add(descIdx); used.add(detailIdx); return true;
- };
-
- // Strong structure: description followed within 1–2 lines by its numeric detail.
- for(let i=0;i<lines.length;i++){
-   if(!v82LooksDescription(lines[i])||used.has(i))continue;
-   let best=null;
-   for(let j=i+1;j<=Math.min(lines.length-1,i+2);j++){
-     if(v82Meta(lines[j])||v82LooksDescription(lines[j])) break;
-     let d=v82InferDetail(lines[j]);
-     if(d && (!best||d.confidence>best.d.confidence)) best={j,d};
-   }
-   if(best) pushItem(lines[i],best.d,i,best.j);
+ let solved=null,chosen=null;
+ for(let gs of groupSets){
+   let z=v83Solve(gs,ti);
+   if(z&&(!solved||z.globalScore>solved.globalScore)){solved=z;chosen=gs}
  }
-
- // Compact/restaurant lines: description and amount on same line.
- for(let i=0;i<lines.length;i++){
-   if(used.has(i)||v82Meta(lines[i]))continue;
-   if(ti.candidates.some(t=>t.idx===i))continue;
-   let p=extractPrice(lines[i]); if(!p)continue;
-   let left=lines[i].slice(0,p.i).trim(), qty=1;
-   let qm=left.match(/^(\d{1,2})\s+(?=[A-Za-zÀ-ÿ*])/);
-   if(qm){qty=+qm[1];left=left.slice(qm[0].length)}
-   left=left.replace(/^\*+/,"").trim();
-   if(!v82LooksDescription(left))continue;
-   let amount=p.v, unit=qty>1?amount/qty:amount;
-   pushItem(left,{kind:"inline",qty,unit,amount,confidence:.72},i,i);
+ let out=[];
+ if(solved&&chosen){
+   chosen.forEach((g,k)=>{
+     let h=solved.picks[k],name=applyLearnedCorrection(g.name);
+     out.push({id:idSeq++,name,qty:h.kind==="weight"?+h.qty.toFixed(3):h.qty,price:h.unit,
+       cat:applyLearnedCategory(name)||category(name),done:false,person:null,
+       _v83:{amount:h.amount,score:h.score,kind:h.kind,repaired:!!h.repaired}});
+   });
  }
-
- // If TOTAL(n) exists, prefer exactly n strongest candidates; zero-price noise never enters.
- if(ti.count!=null && out.length>ti.count){
-   out.sort((a,b)=>(b._v82?.confidence||0)-(a._v82?.confidence||0));
-   out=out.slice(0,ti.count);
- }
-
- let sum=out.reduce((a,i)=>a+i.qty*i.price,0);
- // Among total/payment candidates, prefer one agreeing with item arithmetic.
- let coherent=ti.candidates.filter(t=>v82Close(sum,t.v,.06)).sort((a,b)=>b.rank-a.rank)[0];
- if(coherent) total=coherent.v;
+ let sum=out.reduce((a,i)=>a+i.qty*i.price,0), total=solved?solved.total:(ti.c[0]?.v??null);
  let delta=total==null?null:Math.abs(sum-total);
- if(ti.count!=null && out.length!==ti.count)warnings.push(`${out.length}/${ti.count} articles reconstruits`);
+ if(ti.count!=null&&out.length!==ti.count)warnings.push(`${out.length}/${ti.count} articles reconstruits`);
  if(delta!=null&&delta>.06)warnings.push(`Somme ${sum.toFixed(2)} € ≠ total ${total.toFixed(2)} €`);
  return {out,total,delta,warnings,itemCount:ti.count};
 }
-parseTicket=parseTicketV82;
+parseTicket=parseTicketV83;
 
 function parseShopping(text){
  let out=[];
@@ -588,7 +583,7 @@ function parseText(){
  const ticket=r.ticket;
  lastTicketTotal=r.total;
  items=[];mergeNew(r.out);save();render();
- lastAnalysisSource="Analyse locale V8.2 (sans IA)";
+ lastAnalysisSource="Analyse locale V8.3 (sans IA)";
  document.querySelector("#status").textContent=ticket
    ? `${r.out.length} article(s). ${r.total!=null?(r.delta!=null&&r.delta<=.06?"✅ Cohérence ticket : "+eur(r.total)+" / "+eur(r.total):"⚠️ Somme "+eur(r.out.reduce((s,i)=>s+i.qty*i.price,0))+" — total détecté "+eur(r.total)):"Total non détecté."}`
    : `${r.out.length} article(s) reconnu(s).`;
@@ -1228,7 +1223,7 @@ async function smartAnalyze(){
      throw new Error("Réponse IA invalide : aucune liste d'articles.");
    }
 
-   // V8.2 : l'IA propose, l'arbitre mathématique décide.
+   // V8.3 : l'IA propose, l'arbitre mathématique décide.
    const local=detectAndParse(text);
    let proposed=[];
    data.items.forEach(it=>{
