@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f5f5f5">
-<title>🛒 Liste de courses OCR</title>
+<title>🛒 Liste de courses OCR — V8</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
 main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
@@ -56,7 +56,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </head>
 <body>
 <main>
-<h1>📝 Note</h1>
+<h1>📝 Note <span class="small">V8</span></h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
 
 <div class="box">
@@ -87,7 +87,8 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
    <input id="workerUrl" type="url" placeholder="URL du Worker IA (https://…workers.dev)" style="flex:1;min-width:180px;padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
    <select id="aiModel" style="padding:8px;border:1px solid #ddd;border-radius:8px;font:inherit">
     <option value="@cf/meta/llama-3.2-3b-instruct">Llama 3.2 3B (rapide)</option>
-    <option value="@cf/meta/llama-3.1-8b-instruct">Llama 3.1 8B (plus fiable, plus lent)</option>
+    <option value="@cf/meta/llama-3.1-8b-instruct-fast">Llama 3.1 8B (équilibré)</option>
+    <option value="@cf/meta/llama-3.3-70b-instruct-fp8-fast">Llama 3.3 70B (plus fiable, plus lent)</option>
    </select>
   </div>
  </div>
@@ -305,75 +306,83 @@ function cleanName(s,price){
 }
 function parseTicket(text){
  let out=[],total=null,totalPriority=-1,fallbackTotal=null;
- let lines=text.split(/\n/).map(l=>l.trim());
- let pendingName=null; // nom d'article en attente de son prix sur la ligne suivante
+ let lines=text.split(/\n/).map(l=>l.trim()).filter(Boolean);
+ let pendingName=null;
+
+ const num=v=>parseFloat(String(v).replace(",","."));
+ const pushItem=(name,qty,unitPrice)=>{
+   name=cleanName(name,null).replace(/^\d{1,7}\s+/,"").trim();
+   if(badName(name)||name.length<3||!isFinite(unitPrice)||unitPrice<0)return false;
+   name=applyLearnedCorrection(name);
+   out.push({id:idSeq++,name,qty:qty||1,price:unitPrice,
+     cat:applyLearnedCategory(name)||category(name),done:false,person:null});
+   return true;
+ };
+ const isMeta=line=>/^(?:art(?:icles?)?|plu|net|prix|montant|kg|qte|qté|description|tva|siret|vendeur|heure|balance|numero|numéro|total|sous[- ]?total|especes|espèces|rendu|information)\b/i.test(norm(line));
+
  for(let idx=0;idx<lines.length;idx++){
-  let line=lines[idx];
-  // Détection du "vrai" total, par ordre de priorité : "Net à payer" (montant
-  // réellement réglé) > "Total TTC/(Eur)" > "TOTAL" générique — en excluant
-  // explicitement les lignes "Total HT"/"Total TVA" qui ne sont que des
-  // sous-totaux intermédiaires (sinon on affiche 91,95 € HT au lieu de 101,13 €).
-  let mNet=line.match(/\bnet\s*[aà]\s*payer\b.*?(\d{1,3}[,.]\d{2})/i);
-  let mTtc=line.match(/\btotal\s*(?:ttc|\(?\s*eur\s*\)?)\b.*?(\d{1,3}[,.]\d{2})/i);
-  let mGen=!(/\b(?:ht|tva)\b/i.test(line))&&line.match(/\btotal\b.*?(\d{1,3}[,.]\d{2})/i);
-  if(mNet&&totalPriority<3){total=parseFloat(mNet[1].replace(",","."));totalPriority=3}
-  else if(mTtc&&totalPriority<2){total=parseFloat(mTtc[1].replace(",","."));totalPriority=2}
-  else if(mGen&&totalPriority<1){total=parseFloat(mGen[1].replace(",","."));totalPriority=1}
-  if(mNet||mTtc||mGen)continue; // une ligne de total n'est jamais aussi un article
-  // Repli : si aucun total fiable n'est trouvé, le montant réglé par carte
-  // ("Tarjeta Pin 94,74") correspond presque toujours au total payé.
-  let tj=line.match(/\btarjet\w*\b.*?(\d{1,3}[,.]\d{2})\s*€?/i);
-  if(tj){fallbackTotal=parseFloat(tj[1].replace(",","."));continue}
+   let line=lines[idx];
 
-  // Ligne de ventilation TVA ("B.Imp 16,81 IVA 21,00% 1,68") : on ne la
-  // détecte QUE via la présence d'un taux en %, jamais juste au nombre de
-  // prix sur la ligne — certains tickets (hyper français) écrivent
-  // légitimement "qté x prix = total" avec 3 nombres sur une ligne d'article.
-  if(/%/.test(line)&&(line.match(/\d{1,3}[,.]\d{2}/g)||[]).length>=2)continue;
+   // Totals: choose the most meaningful payment total, not VAT/subtotals/category totals.
+   let mNet=line.match(/\bnet\s*[aà]\s*payer\b.*?(\d{1,4}[,.]\d{2})/i);
+   let mPay=line.match(/\btotal\s+[aà]\s+payer\b.*?(\d{1,4}[,.]\d{2})/i);
+   let mTtc=line.match(/\btotal\s*(?:ttc|\(?\s*eur\s*\)?)\b.*?(\d{1,4}[,.]\d{2})/i);
+   let mGen=!/\b(?:ht|tva|alimentaire|beaute|beauté|sante|santé|hygiene|hygiène)\b/i.test(line)
+      &&line.match(/^\s*total(?:\s*\(\s*\d+\s*\)|\s*\[\s*\d+\s*\]\s*articles?)?.*?(\d{1,4}[,.]\d{2})\s*€?\s*$/i);
+   if(mNet&&totalPriority<4){total=num(mNet[1]);totalPriority=4}
+   else if(mPay&&totalPriority<4){total=num(mPay[1]);totalPriority=4}
+   else if(mTtc&&totalPriority<3){total=num(mTtc[1]);totalPriority=3}
+   else if(mGen&&totalPriority<2){total=num(mGen[1]);totalPriority=2}
+   if(mNet||mPay||mTtc||mGen){pendingName=null;continue}
 
-  // Format "qté x prix unitaire" sur sa propre ligne, nom sur la ligne
-  // d'avant (courant sur les tickets d'hypermarché français) :
-  // "#14744 HARITZA NAVARRA 75CL" puis "1.000x   6.60Eur   6.60(2)"
-  // ou au poids : "0.882kg x   8.20Eur/kg   7.23(1)"
-  let strippedPrefix=line.match(/^\D*/)[0];
-  let qtyPriceM=strippedPrefix.length<=3
-   ?line.slice(strippedPrefix.length).match(/^(\d{1,4}(?:[.,]\d+)?)\s*(kg)?\s*(?:[x×]\s*|\s+)(\d{1,3}[,.]\d{2})/i)
-   :null;
-  if(qtyPriceM&&pendingName){
-   let isWeight=!!qtyPriceM[2];
-   let qty=isWeight?1:Math.max(1,Math.round(parseFloat(qtyPriceM[1].replace(",","."))));
+   let tj=line.match(/\b(?:tarjet\w*|carte|cb|especes|espèces)\b.*?(\d{1,4}[,.]\d{2})\s*€?/i);
+   if(tj){fallbackTotal=num(tj[1]);pendingName=null;continue}
+   if(/%/.test(line)&&(line.match(/\d{1,4}[,.]\d{2}/g)||[]).length>=2){pendingName=null;continue}
+
+   // Case A: weighted item details on their own line:
+   // "0,170   33,25   5,65" or "0,760 kg x 4,99 €/kg".
+   let weight=line.match(/(?:^|\s)(0[,.]\d{2,3})\s*(?:kg)?(?:\s*[x×]\s*|\s+)(\d{1,3}[,.]\d{2})(?:\s*(?:€?\/?kg|eur\/kg))?(?:\s+(\d{1,4}[,.]\d{2}))?/i);
+   if(weight&&pendingName){
+     let w=num(weight[1]), unit=num(weight[2]);
+     // The receipt's final amount is a validation hint; the app stores kg × €/kg.
+     pushItem(pendingName,w,unit);
+     pendingName=null; continue;
+   }
+
+   // Case B: quantity/unit-price line after a product name:
+   // "+ 1 un x 1,70 1,70", "2 x 1,75 EUR", "1pcs 7,50 7,50".
+   let qp=line.match(/^[^\d]{0,3}(\d{1,3})\s*(?:un|pcs?|pc\.?)?\s*(?:[x×]\s*)?(\d{1,3}[,.]\d{2})(?:\s*(?:eur|€))?(?:\s+(\d{1,4}[,.]\d{2}))?/i);
+   if(qp&&pendingName){
+     let q=Math.max(1,parseInt(qp[1],10)), unit=num(qp[2]);
+     pushItem(pendingName,q,unit);
+     pendingName=null; continue;
+   }
+
+   // Case C: complete line: optional quantity + name + rightmost line amount.
    let p=extractPrice(line);
    if(p){
-    let unitPrice=isWeight?p.v:parseFloat(qtyPriceM[3].replace(",","."));
-    let nm=applyLearnedCorrection(pendingName);
-    out.push({id:idSeq++,name:nm,qty,price:unitPrice,cat:applyLearnedCategory(nm)||category(nm),done:false,person:null});
+     let before=line.slice(0,p.i).trim();
+     let qty=1;
+     let qm=before.match(/^(\d{1,2})\s+(?=[A-Za-zÀ-ÿ*])/);
+     if(qm){qty=Math.max(1,parseInt(qm[1],10));before=before.slice(qm[0].length)}
+     before=before.replace(/^\*+/,"").trim();
+
+     // Avoid treating detail lines such as "1 x 11,96 EUR" as products.
+     if(/^\+?\s*\d+(?:[.,]\d+)?\s*(?:kg|un|pcs?)?\s*[x×]\s*/i.test(line)){
+       if(pendingName){
+         let nums=[...line.matchAll(/(\d{1,4}[,.]\d{2})/g)].map(m=>num(m[1]));
+         let unit=nums[0]||p.v;
+         pushItem(pendingName,qty,unit);
+         pendingName=null;
+       }
+       continue;
+     }
+     if(!isMeta(before)&&pushItem(before,qty,qty>1?p.v/qty:p.v)){pendingName=null;continue}
    }
-   pendingName=null;
-   continue;
-  }
 
-  // Certains tickets (bars/restaurants) indiquent la quantité en tout début
-  // de ligne : "2 COFRADE   2,40" où 2,40 est le total de la ligne (pas le
-  // prix unitaire). On extrait cette quantité et on déduit le prix unitaire.
-  let qty=1,workLine=line;
-  let qm=line.match(/^(\d{1,2})\s+(?=[A-Za-zÀ-ÿ])/);
-  if(qm){let n=parseInt(qm[1],10);if(n>=1&&n<=30){qty=n;workLine=line.slice(qm[0].length)}}
-
-  let p=extractPrice(workLine);
-  if(!p){
-   // Pas de prix sur cette ligne : peut-être le nom d'un article dont le
-   // prix arrive sur la ligne suivante (format vu ci-dessus).
-   let candidate=cleanName(line,null);
-   candidate=candidate.replace(/^\d{2,7}\s+/,""); // code produit résiduel (ex. "414744 HARITZA...")
-   if(!badName(candidate)&&candidate.length>=5)pendingName=candidate;
-   continue;
-  }
-  let name=cleanName(workLine,p);if(badName(name)||name.length<5)continue;
-  if(/\b(?:b\.?\s*imp|iva|importe|tarjet\w*|tef|cambio)\b/i.test(name))continue;
-  name=applyLearnedCorrection(name);
-  let unitPrice=qty>1?p.v/qty:p.v;
-  out.push({id:idSeq++,name,qty,price:unitPrice,cat:applyLearnedCategory(name)||category(name),done:false,person:null});
-  pendingName=null;
+   // No price: remember a plausible product description for the next detail line.
+   let candidate=cleanName(line,null).replace(/^\d{1,7}\s+/,"").replace(/^\*+/,"").trim();
+   if(!isMeta(candidate)&&!badName(candidate)&&candidate.length>=3)pendingName=candidate;
  }
  return {out,total:total??fallbackTotal};
 }
@@ -412,16 +421,24 @@ function detectAndParse(text){
  const keywordHit=/\b(total|iva|tarjet\w*|cambio|ambio|b\.?\s*imp|club de clientes)\b/i.test(text);
  const ticket=keywordHit||priceLineCount>=4;
  const r=ticket?parseTicket(text):parseShopping(text);
- return {out:r.out,total:r.total,ticket};
+ // V8: arithmetic sanity check. Never silently "fix" names/prices from a remembered
+ // price; only flag a mismatch between extracted lines and the printed ticket total.
+ if(ticket&&r.total!=null&&r.out.length){
+   const sum=r.out.reduce((a,i)=>a+(+i.qty||0)*(+i.price||0),0);
+   r.delta=Math.abs(sum-r.total);
+ }
+ return {out:r.out,total:r.total,ticket,delta:r.delta??null};
 }
+let lastAnalysisSource="Aucune analyse effectuée pour l'instant";
 function parseText(){
  const text=document.querySelector("#raw").value;
  const r=detectAndParse(text);
  const ticket=r.ticket;
  lastTicketTotal=r.total;
  items=[];mergeNew(r.out);save();render();
+ lastAnalysisSource="Analyse locale (sans IA)";
  document.querySelector("#status").textContent=ticket
-   ? `${r.out.length} ligne(s) de produit retenue(s) sur le ticket. Les lignes sans prix ont été ignorées.`
+   ? `${r.out.length} ligne(s) de produit retenue(s) sur le ticket.${r.delta!=null&&r.delta>0.02?" ⚠️ Écart avec le total imprimé : "+eur(r.delta)+" — vérification conseillée.":" ✅ Somme cohérente avec le total détecté."}`
    : `${r.out.length} article(s) reconnu(s).`;
 }
 function save(){localStorage.setItem("courses6",JSON.stringify(items))}
@@ -985,6 +1002,7 @@ async function copyForAnalysis(){
  lines.push(raw.trim()||"(vide — aucune photo analysée)");
  lines.push("");
  lines.push("=== Résultat actuel dans l'app ===");
+ lines.push(`Source de l'analyse : ${lastAnalysisSource}`);
  lines.push(`Mode : ${modeLabel(mode)}`);
  lines.push(`Nb articles : ${items.length}`);
  items.forEach(i=>lines.push(`- ${i.name} | qté=${i.qty} | PU=${i.price.toFixed(2)}€ | total=${(i.qty*i.price).toFixed(2)}€ | cat=${i.cat}`));
@@ -1064,7 +1082,7 @@ async function smartAnalyze(){
      let name=(it.name||"").toString().trim();
      if(!name||name.length<2)return;
      name=applyLearnedCorrection(name);
-     let qty=Math.max(1,Math.round(+it.qty||1));
+     let qty=Math.max(0.001,+it.qty||1);
      let price=Math.max(0,+((it.unit_price!=null?it.unit_price:it.price))||0);
      let aiCat=(it.category||it.cat||"").toString().trim();
      let validCats=[...Object.keys(cats),...customCats,"Autres"];
@@ -1074,6 +1092,9 @@ async function smartAnalyze(){
    });
 
    if(data.total!=null&&!isNaN(+data.total)) lastTicketTotal=+data.total;
+
+   let modelUsedRaw=data.model||chosenModel||"modèle inconnu";
+   lastAnalysisSource="IA — "+modelUsedRaw.replace("@cf/meta/","");
 
    save();render();
 
