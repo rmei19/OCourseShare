@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f5f5f5">
-<title>🛒 Liste de courses OCR — V8.8</title>
+<title>🛒 Liste de courses OCR — V9 Vision</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
 main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
@@ -53,7 +53,7 @@ table.sum th:last-child,table.sum td:last-child{text-align:right}
 table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:none}
 .empty{color:#888;font-size:.9rem;text-align:center;padding:8px 0}
 
-/* V8.8 — article lisible d'un coup d'œil */
+/* V9 Vision — article lisible d'un coup d'œil */
 .item{display:grid;grid-template-columns:28px minmax(0,1fr) 44px;gap:7px 8px;align-items:center;padding:10px 0;border-bottom:1px solid #eee}
 .item input[type=checkbox]{grid-column:1;grid-row:1;width:20px;height:20px}
 .item .name{grid-column:2;grid-row:1;width:100%;min-width:0;font-size:1rem;font-weight:700}
@@ -75,7 +75,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </head>
 <body>
 <main>
-<h1>📝 Note <span class="small">V8.8</span></h1>
+<h1>📝 Note <span class="small">V9 Vision</span></h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
 
 <div class="box">
@@ -98,7 +98,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
    <button class="btn" id="analyze">➕ Analyser</button>
    <button class="btn secondary" id="clearText">🧹 Effacer</button>
-   <button class="btn secondary" id="smartAnalyze">🤖 Vérifier avec l'IA</button>
+   <button class="btn secondary" id="smartAnalyze">🤖 Analyser la photo avec l'IA</button>
    <button class="btn secondary" id="copyForAnalysis">📋 Copier pour analyse</button>
   </div>
   <div class="small" id="smartHint" style="margin-top:6px">L'analyse IA est facultative. Ton OCR et ton analyse classique restent locaux. L'IA n'est appelée que lorsque tu le demandes et le texte OCR est envoyé à ton Worker Cloudflare.</div>
@@ -191,6 +191,7 @@ let listOpen=true,personSummaryOpen=true,articleTableOpen=false,priceHistoryOpen
 let people=JSON.parse(localStorage.getItem("courses6_people")||"[]"),activeTab="Tous";
 let payer=JSON.parse(localStorage.getItem("courses6_payer")||"null");
 let savedWorkerUrl=localStorage.getItem("courses6_worker_url")||"";
+let lastVisionImageData="";
 let customCats=JSON.parse(localStorage.getItem("courses6_customcats")||"[]");
 // Memoire de corrections : quand l'utilisateur renomme un article, change sa
 // catégorie, ou confirme un prix via le bouton "Retenir les corrections",
@@ -397,7 +398,7 @@ function parseTicket(text){
  }
  return {out,total:total??fallbackTotal};
 }
-/* ===================== V8.8 : résolution globale =====================
+/* ===================== V9 Vision : résolution globale =====================
    On ne choisit plus 840/8,40 ou 0480/0,480 immédiatement.
    Chaque ligne produit génère plusieurs hypothèses. Le solveur choisit ensuite
    la combinaison qui respecte au mieux les équations, TOTAL(n) et le total payé. */
@@ -660,7 +661,7 @@ function parseTicketV86(text){
 }
 parseTicket=parseTicketV86;
 
-/* V8.8 — tickets restaurant :
+/* V9 Vision — tickets restaurant :
    les lignes "Menu" sont des composants inclus et ne doivent pas être
    comptées comme dépenses supplémentaires. Le prix explicite de chaque
    ligne payante est conservé et NET À PAYER devient le total prioritaire. */
@@ -795,7 +796,7 @@ function parseText(){
  const ticket=r.ticket;
  lastTicketTotal=r.total;
  items=[];mergeNew(r.out);save();render();
- lastAnalysisSource="Analyse locale V8.8 (sans IA)";
+ lastAnalysisSource="Analyse locale V9 Vision (sans IA)";
  document.querySelector("#status").textContent=ticket
    ? `${r.out.length} article(s). ${r.total!=null?(r.delta!=null&&r.delta<=.06?"✅ Cohérence ticket : "+eur(r.total)+" / "+eur(r.total):"⚠️ Somme "+eur(r.out.reduce((s,i)=>s+i.qty*i.price,0))+" — total détecté "+eur(r.total)):"Total non détecté."}`
    : `${r.out.length} article(s) reconnu(s).`;
@@ -1297,7 +1298,9 @@ async function ocr(file){
   // de vraie métadonnée DPI). tessedit_pageseg_mode 6 = bloc de texte
   // uniforme, un bon point de départ pour un ticket.
   await w.setParameters({tessedit_pageseg_mode:"6",preserve_interword_spaces:"1",user_defined_dpi:"300"});
-  let c=await imageCanvas(file,"none"),r=await w.recognize(c),text=r.data.text||"",conf=r.data.confidence||0;
+  let c=await imageCanvas(file,"none");
+  try{lastVisionImageData=c.toDataURL("image/jpeg",0.84)}catch(e){lastVisionImageData=""}
+  let r=await w.recognize(c),text=r.data.text||"",conf=r.data.confidence||0;
   if(conf<45||text.length<30){
    st.textContent="Amélioration du contraste…";
    let c2=await imageCanvas(file,"contrast"),r2=await w.recognize(c2);
@@ -1340,8 +1343,8 @@ async function ocr(file){
    }
   }else{
    head.classList.add("closed");body.style.display="none";
-   st.textContent=`OCR terminé (${Math.round(conf)} %). Le parsing local n'a presque rien trouvé, tentative avec l'IA…`;
-   await smartAnalyze();
+   st.textContent=`OCR faible (${Math.round(conf)} %). Analyse directe de la photo par l’IA…`;
+   await smartAnalyze(true);
   }
  }catch(e){bar.style.width="0%";st.textContent="Erreur OCR : "+(e.message||e)}
 }
@@ -1401,7 +1404,7 @@ function showCopyBox(content,copied){
  overlay.querySelector("#copyBoxClose").onclick=()=>overlay.remove();
  overlay.onclick=(e)=>{if(e.target===overlay)overlay.remove()};
 }
-async function smartAnalyze(){
+async function smartAnalyze(forceVision=false){
  let text=document.querySelector("#raw").value.trim();
  let st=document.querySelector("#status");
  if(!text){st.textContent="Rien à analyser : la zone de texte est vide.";return}
@@ -1414,13 +1417,16 @@ async function smartAnalyze(){
  }
  let btn=document.querySelector("#smartAnalyze"),orig=btn.textContent;
  btn.disabled=true;btn.textContent="🤖 Analyse IA…";
- st.textContent="Envoi du texte OCR au Worker…";
+ const useVision=forceVision || !!lastVisionImageData;
+ st.textContent=useVision?"Envoi de la photo au Worker IA vision…":"Envoi du texte OCR au Worker…";
  try{
    const response=await fetch(workerUrl.replace(/\/+$/,""),{
      method:"POST",
      headers:{"Content-Type":"application/json"},
      body:JSON.stringify({
        text,
+       image:useVision?lastVisionImageData:"",
+       vision:useVision,
        model:chosenModel,
        mode,
        currentItems:items.map(i=>({name:i.name,qty:i.qty,price:i.price,cat:i.cat})),
@@ -1435,7 +1441,7 @@ async function smartAnalyze(){
      throw new Error("Réponse IA invalide : aucune liste d'articles.");
    }
 
-   // V8.8 : l'IA propose, l'arbitre mathématique décide.
+   // V9 Vision : l'IA propose, l'arbitre mathématique décide.
    const local=detectAndParse(text);
    let proposed=[];
    data.items.forEach(it=>{
