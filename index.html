@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#f5f5f5">
-<title>🛒 Liste de courses OCR — V8.7</title>
+<title>🛒 Liste de courses OCR — V8.8</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#222;font-family:system-ui,sans-serif}
 main{max-width:720px;margin:auto;padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(14px + env(safe-area-inset-left));padding-right:calc(14px + env(safe-area-inset-right))}h1{font-size:1.4rem;margin:4px 0 12px}
@@ -53,7 +53,7 @@ table.sum th:last-child,table.sum td:last-child{text-align:right}
 table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:none}
 .empty{color:#888;font-size:.9rem;text-align:center;padding:8px 0}
 
-/* V8.7 — article lisible d'un coup d'œil */
+/* V8.8 — article lisible d'un coup d'œil */
 .item{display:grid;grid-template-columns:28px minmax(0,1fr) 44px;gap:7px 8px;align-items:center;padding:10px 0;border-bottom:1px solid #eee}
 .item input[type=checkbox]{grid-column:1;grid-row:1;width:20px;height:20px}
 .item .name{grid-column:2;grid-row:1;width:100%;min-width:0;font-size:1rem;font-weight:700}
@@ -75,7 +75,7 @@ table.sum tr.grand td{font-weight:700;border-top:2px solid #ccc;border-bottom:no
 </head>
 <body>
 <main>
-<h1>📝 Note <span class="small">V8.7</span></h1>
+<h1>📝 Note <span class="small">V8.8</span></h1>
 <div class="tabs" id="modeTabs" style="margin-top:0"></div>
 
 <div class="box">
@@ -397,7 +397,7 @@ function parseTicket(text){
  }
  return {out,total:total??fallbackTotal};
 }
-/* ===================== V8.7 : résolution globale =====================
+/* ===================== V8.8 : résolution globale =====================
    On ne choisit plus 840/8,40 ou 0480/0,480 immédiatement.
    Chaque ligne produit génère plusieurs hypothèses. Le solveur choisit ensuite
    la combinaison qui respecte au mieux les équations, TOTAL(n) et le total payé. */
@@ -660,7 +660,7 @@ function parseTicketV86(text){
 }
 parseTicket=parseTicketV86;
 
-/* V8.7 — tickets restaurant :
+/* V8.8 — tickets restaurant :
    les lignes "Menu" sont des composants inclus et ne doivent pas être
    comptées comme dépenses supplémentaires. Le prix explicite de chaque
    ligne payante est conservé et NET À PAYER devient le total prioritaire. */
@@ -710,6 +710,34 @@ function parseRestaurantV87(text){
  let total=rt?.v??null, delta=total==null?null:Math.abs(sum-total);
  return {out,total,delta,warnings:delta!=null&&delta>.06?[`Somme ${sum.toFixed(2)} € ≠ total ${total.toFixed(2)} €`]:[],itemCount:out.length};
 }
+
+function v88OcrQuality(text){
+  const lines=String(text).split(/\n/).map(x=>x.trim()).filter(Boolean);
+  const useful=lines.filter(x=>{
+    const letters=(x.match(/[A-Za-zÀ-ÿ]{2,}/g)||[]).join("");
+    const digits=(x.match(/\d/g)||[]).length;
+    const bad=(x.match(/[<>=|_~^`{}[\]\\]/g)||[]).length;
+    return letters.length>=3 && (letters.length>=digits || digits<=5) && bad < Math.max(3, x.length*.22);
+  });
+  const money=(String(text).match(/\b\d{1,4}[,.]\d{2}\s*(?:€|EUR)?\b/g)||[]).length;
+  const totals=/(?:total|net\s*(?:a|à)\s*payer|rendu|sous.?total)/i.test(text);
+  const meaningful=useful.filter(x=>!v83Meta(x));
+  return {score:meaningful.length + money*2 + (totals?3:0), meaningful:meaningful.length, money, totals};
+}
+function v88GarbageResult(text){
+  const q=v88OcrQuality(text);
+  if(q.score>=5) return null;
+  return {
+    out:[], total:null, delta:null,
+    warnings:[
+      "OCR trop dégradé pour une analyse fiable.",
+      "La photo semble mal orientée, floue ou insuffisamment lisible.",
+      "Aucun article n'a été inventé à partir du texte illisible."
+    ],
+    itemCount:0, ocrQuality:q
+  };
+}
+
 function isRestaurantTicket(text){
  let x=norm(text);
  return /\b(?:duplicata|serveur|table|net\s*(?:a|à)\s*payer|total\s*ht|couvert)\b/i.test(x)
@@ -717,11 +745,11 @@ function isRestaurantTicket(text){
 }
 const parseTicketV87Previous=parseTicket;
 parseTicket=function(text){
+  const bad=v88GarbageResult(text);
+  if(bad) return bad;
   if(isRestaurantTicket(text)){
     let r=parseRestaurantV87(text);
     if(r.out.length>=2 && (r.delta==null || r.delta<=.10)) return r;
-    // Even when the total is not fully reconstructed, keep a useful
-    // restaurant extraction instead of falling back to grocery heuristics.
     if(r.out.length>=2) return r;
   }
   return parseTicketV87Previous(text);
@@ -767,7 +795,7 @@ function parseText(){
  const ticket=r.ticket;
  lastTicketTotal=r.total;
  items=[];mergeNew(r.out);save();render();
- lastAnalysisSource="Analyse locale V8.7 (sans IA)";
+ lastAnalysisSource="Analyse locale V8.8 (sans IA)";
  document.querySelector("#status").textContent=ticket
    ? `${r.out.length} article(s). ${r.total!=null?(r.delta!=null&&r.delta<=.06?"✅ Cohérence ticket : "+eur(r.total)+" / "+eur(r.total):"⚠️ Somme "+eur(r.out.reduce((s,i)=>s+i.qty*i.price,0))+" — total détecté "+eur(r.total)):"Total non détecté."}`
    : `${r.out.length} article(s) reconnu(s).`;
@@ -1407,7 +1435,7 @@ async function smartAnalyze(){
      throw new Error("Réponse IA invalide : aucune liste d'articles.");
    }
 
-   // V8.7 : l'IA propose, l'arbitre mathématique décide.
+   // V8.8 : l'IA propose, l'arbitre mathématique décide.
    const local=detectAndParse(text);
    let proposed=[];
    data.items.forEach(it=>{
